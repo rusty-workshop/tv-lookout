@@ -21,6 +21,8 @@ Roku's developer installer refused to start. Same three screens, fed by
    the board locally (`BoardView`, cburnett pieces in `res/drawable-nodpi`)
    with a 160 ms slide per move, and counts the clocks down every 100 ms
    (tenths under 10 s). The stream closes when you leave the page.
+   **Up/down** picks the game type (Classical by default, then Rapid, Blitz,
+   Bullet, Chess960, Top rated), via `api/tv/<channel>/feed`; remembered.
 
 NWS weather alerts show as a banner over every screen. Pages rotate every 30
 seconds; left/right (or rewind/fast-forward) flips and pauses rotation for 5

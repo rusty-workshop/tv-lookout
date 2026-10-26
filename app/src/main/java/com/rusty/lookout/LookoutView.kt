@@ -127,12 +127,19 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     // Live game state, straight from Lichess's stream.
     private var tvThread: Thread? = null
     @Volatile private var tvConn: HttpURLConnection? = null
+    // Bumped on every stop; a stream thread quits as soon as it's no longer
+    // the current generation (an interrupt alone can be swallowed by the
+    // socket code), and its late messages are ignored.
+    @Volatile private var tvGeneration = 0
     private var tvBlackBottom = false
     private var tvWhiteSecs = 0.0
     private var tvBlackSecs = 0.0
     private var tvWhiteToMove = true
     private var tvClockAt = 0L
     private var tvClockLabels = mapOf<String, TextView>()  // "white"/"black" -> clock
+    private var tvChannel = prefs.getInt("tvChannel", 0).coerceIn(0, TV_CHANNELS.lastIndex)
+    private lateinit var tvTitle: TextView
+    private lateinit var tvSubtitle: TextView
 
     init {
         background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
@@ -307,8 +314,10 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         val live = page()
         place(live, tvBoard, 96, 226, 780, 780)
         val lcard = card(live, 920, 226, 904, 780)
-        eyebrow(lcard, 48, 44, "LICHESS TV  ·  LIVE")
-        text(lcard, 48, 88, 30, MUTED, LIGHT, width = 800).text = "The top-rated game being played right now"
+        tvTitle = eyebrow(lcard, 48, 44, "")
+        tvSubtitle = text(lcard, 48, 88, 30, MUTED, LIGHT, width = 800)
+        text(lcard, 48, 712, 24, MUTED, REGULAR, width = 800).text = "▲ ▼  change game type"
+        showTvChannel()
         for (y in listOf(200, 470)) {
             val row = card(lcard, 48, y, 808, 230, radius = 26f, fill = "#0DFFFFFF", stroke = null)
             tvPlayers += Triple(
@@ -365,6 +374,24 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         prefs.edit().putBoolean("pinned", pinned).putInt("page", index).apply()
     }
 
+    /** Up/down on the Live page: switch which kind of game Lichess TV shows. */
+    fun changeTvChannel(delta: Int): Boolean {
+        if (index != LIVE) return false
+        tvChannel = (tvChannel + delta + TV_CHANNELS.size) % TV_CHANNELS.size
+        prefs.edit().putInt("tvChannel", tvChannel).apply()
+        showTvChannel()
+        stopTv()
+        startTv()
+        return true
+    }
+
+    private fun showTvChannel() {
+        val (_, name) = TV_CHANNELS[tvChannel]
+        tvTitle.text = "LICHESS TV  ·  ${name.uppercase()}  ·  LIVE"
+        tvSubtitle.text = if (name == "Top rated") "The top-rated game being played right now"
+        else "The top $name game being played right now"
+    }
+
     fun step(delta: Int) {
         showPage((index + delta + pages.size) % pages.size)
         pausedUntil = System.currentTimeMillis() + PAUSE_MS
@@ -412,10 +439,12 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
 
     private fun startTv() {
         if (tvThread != null) return
+        val gen = tvGeneration
         tvThread = Thread {
-            while (!Thread.currentThread().isInterrupted) {
+            while (gen == tvGeneration) {
                 try {
-                    val conn = URL("https://lichess.org/api/tv/feed").openConnection() as HttpURLConnection
+                    val channel = TV_CHANNELS[tvChannel].first
+                    val conn = URL("https://lichess.org/api/tv/$channel/feed").openConnection() as HttpURLConnection
                     conn.setRequestProperty("User-Agent", "Lookout (Rusty's TV)")
                     conn.connectTimeout = 8000
                     conn.readTimeout = 60000  // Lichess sends a line at least every few seconds
@@ -424,12 +453,13 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
                         while (true) {
                             val line = reader.readLine() ?: break
                             if (line.isBlank()) continue
+                            if (gen != tvGeneration) break
                             val msg = JSONObject(line)
-                            main.post { onTvMessage(msg) }
+                            main.post { if (gen == tvGeneration) onTvMessage(msg) }
                         }
                     }
                 } catch (e: Exception) {
-                    if (Thread.currentThread().isInterrupted) break
+                    if (gen != tvGeneration) break
                     Log.w(TAG, "tv stream: $e")
                     try { Thread.sleep(3000) } catch (ie: InterruptedException) { break }
                 } finally {
@@ -441,6 +471,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     }
 
     private fun stopTv() {
+        tvGeneration++
         tvThread?.interrupt()
         tvConn?.disconnect()
         tvThread = null
@@ -989,6 +1020,9 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         const val FEED_MS = 60_000L
         const val FADE_MS = 450L
         const val LIVE = 5  // index of the Live page
+        // Lichess TV channels (API name, label), Classical first as the default.
+        val TV_CHANNELS = listOf("classical" to "Classical", "rapid" to "Rapid", "blitz" to "Blitz",
+            "bullet" to "Bullet", "chess960" to "Chess960", "best" to "Top rated")
         const val ACCENT_HEX = "#AA5CC3"
         val WHITE = Color.parseColor("#F4F4F7")
         val SOFT = Color.parseColor("#C9CAD6")
