@@ -16,7 +16,11 @@ Roku's developer installer refused to start. Same three screens, fed by
 5. **Chess**: Lichess correspondence boards from Gambit, a rating chart per
    speed (rebuilt from rated games), the last 10 results, and the daily
    puzzle position.
-6. **Live**: the top Lichess TV game, updating every 3 seconds while shown.
+6. **Live**: the top Lichess TV game in real time. While the page is up the
+   TV holds `lichess.org/api/tv/feed` open itself (no Latitude hop), draws
+   the board locally (`BoardView`, cburnett pieces in `res/drawable-nodpi`)
+   with a 160 ms slide per move, and counts the clocks down every 100 ms
+   (tenths under 10 s). The stream closes when you leave the page.
 
 NWS weather alerts show as a banner over every screen. Pages rotate every 30
 seconds; left/right (or rewind/fast-forward) flips and pauses rotation for 5

@@ -122,9 +122,17 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private val pinChip: TextView
 
     // live page
-    private val tvBoard: ImageView
+    private val tvBoard = BoardView(context)
     private val tvPlayers = mutableListOf<Triple<TextView, TextView, TextView>>()  // name, rating, clock
-    private var tvBoardUrl: String? = null
+    // Live game state, straight from Lichess's stream.
+    private var tvThread: Thread? = null
+    @Volatile private var tvConn: HttpURLConnection? = null
+    private var tvBlackBottom = false
+    private var tvWhiteSecs = 0.0
+    private var tvBlackSecs = 0.0
+    private var tvWhiteToMove = true
+    private var tvClockAt = 0L
+    private var tvClockLabels = mapOf<String, TextView>()  // "white"/"black" -> clock
 
     init {
         background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
@@ -297,7 +305,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
 
         // ---- live (Lichess TV) ----
         val live = page()
-        tvBoard = image(live, 96, 226, 780, radius = 22f)
+        place(live, tvBoard, 96, 226, 780, 780)
         val lcard = card(live, 920, 226, 904, 780)
         eyebrow(lcard, 48, 44, "LICHESS TV  ·  LIVE")
         text(lcard, 48, 88, 30, MUTED, LIGHT, width = 800).text = "The top-rated game being played right now"
@@ -334,11 +342,12 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         tickClock()
         refresh()
         main.postDelayed(rotate, ROTATE_MS)
-        if (index == LIVE) main.post(pollTv)
+        if (index == LIVE) startTv()
     }
 
     fun stop() {
         running = false
+        stopTv()
         main.removeCallbacksAndMessages(null)
     }
 
@@ -393,19 +402,119 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         }
         headerTime.animate().alpha(if (i == 0 || pinned) 0f else 1f).setDuration(FADE_MS)
         if (pinned) prefs.edit().putInt("page", i).apply()
-        main.removeCallbacks(pollTv)
-        if (i == LIVE && running) main.post(pollTv)
+        if (i == LIVE && running) startTv() else stopTv()
     }
 
-    /** While the Live page is up, follow the game every few seconds. */
-    private val pollTv = object : Runnable {
-        override fun run() {
-            worker.execute {
-                val tv = runCatching { JSONObject(String(fetch("$SERVER/api/tv"))) }.getOrNull()
-                main.post { if (tv != null) showTv(tv) }
+    // ---- Lichess TV, live -------------------------------------------------
+    // While the Live page is showing, the TV holds Lichess's TV stream open
+    // itself: each move is pushed the moment it's played and drawn locally, and
+    // the clocks count down on the TV between moves.
+
+    private fun startTv() {
+        if (tvThread != null) return
+        tvThread = Thread {
+            while (!Thread.currentThread().isInterrupted) {
+                try {
+                    val conn = URL("https://lichess.org/api/tv/feed").openConnection() as HttpURLConnection
+                    conn.setRequestProperty("User-Agent", "Lookout (Rusty's TV)")
+                    conn.connectTimeout = 8000
+                    conn.readTimeout = 60000  // Lichess sends a line at least every few seconds
+                    tvConn = conn
+                    conn.inputStream.bufferedReader().use { reader ->
+                        while (true) {
+                            val line = reader.readLine() ?: break
+                            if (line.isBlank()) continue
+                            val msg = JSONObject(line)
+                            main.post { onTvMessage(msg) }
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (Thread.currentThread().isInterrupted) break
+                    Log.w(TAG, "tv stream: $e")
+                    try { Thread.sleep(3000) } catch (ie: InterruptedException) { break }
+                } finally {
+                    tvConn?.disconnect()
+                }
             }
-            if (index == LIVE && running) main.postDelayed(this, TV_POLL_MS)
+        }.apply { isDaemon = true; start() }
+        main.post(tickTv)
+    }
+
+    private fun stopTv() {
+        tvThread?.interrupt()
+        tvConn?.disconnect()
+        tvThread = null
+        main.removeCallbacks(tickTv)
+    }
+
+    private fun onTvMessage(msg: JSONObject) {
+        val d = msg.optJSONObject("d") ?: return
+        when (msg.optString("t")) {
+            "featured" -> {
+                tvBlackBottom = d.optString("orientation") == "black"
+                val players = d.getJSONArray("players")
+                val list = (0 until players.length()).map { players.getJSONObject(it) }
+                // Top row is whoever sits at the top of the board.
+                val bottomColor = if (tvBlackBottom) "black" else "white"
+                val ordered = list.sortedBy { if (it.getString("color") == bottomColor) 1 else 0 }
+                val clocks = mutableMapOf<String, TextView>()
+                ordered.take(2).forEachIndexed { i, p ->
+                    val (name, rating, clock) = tvPlayers[i]
+                    val user = p.optJSONObject("user")
+                    val title = user?.optString("title").orEmpty()
+                    val color = p.getString("color")
+                    name.text = (if (color == "white") "○  " else "●  ") +
+                        listOf(title, user?.optString("name") ?: "?").filter { it.isNotEmpty() }.joinToString(" ")
+                    rating.text = "Rated ${p.optInt("rating")}"
+                    clocks[color] = clock
+                    if (color == "white") tvWhiteSecs = p.optDouble("seconds") else tvBlackSecs = p.optDouble("seconds")
+                }
+                tvClockLabels = clocks
+                val fen = d.getString("fen")
+                tvWhiteToMove = fen.split(' ').getOrNull(1) != "b"
+                tvBoard.setPosition(fen, null, tvBlackBottom)
+            }
+            "fen" -> {
+                val fen = d.getString("fen")
+                val lm = d.optString("lm").ifEmpty { null }
+                tvBoard.setPosition(fen, lm, tvBlackBottom)
+                if (d.has("wc")) tvWhiteSecs = d.optDouble("wc")
+                if (d.has("bc")) tvBlackSecs = d.optDouble("bc")
+                // Whoever's piece just landed on the to-square has moved; the other side is on the clock.
+                val side = fen.split(' ').getOrNull(1)
+                tvWhiteToMove = when (side) {
+                    "w" -> true
+                    "b" -> false
+                    else -> !tvWhiteToMove
+                }
+            }
+            else -> return
         }
+        tvClockAt = System.currentTimeMillis()
+        drawClocks()
+    }
+
+    private val tickTv = object : Runnable {
+        override fun run() {
+            drawClocks()
+            main.postDelayed(this, 100)
+        }
+    }
+
+    private fun drawClocks() {
+        if (tvClockAt == 0L) return
+        val elapsed = (System.currentTimeMillis() - tvClockAt) / 1000.0
+        val white = if (tvWhiteToMove) tvWhiteSecs - elapsed else tvWhiteSecs
+        val black = if (!tvWhiteToMove) tvBlackSecs - elapsed else tvBlackSecs
+        tvClockLabels["white"]?.let { it.text = clock(white); it.setTextColor(if (tvWhiteToMove) WHITE else MUTED) }
+        tvClockLabels["black"]?.let { it.text = clock(black); it.setTextColor(if (!tvWhiteToMove) WHITE else MUTED) }
+    }
+
+    /** m:ss, with tenths in the last 10 seconds like Lichess. */
+    private fun clock(secs: Double): String {
+        val s = maxOf(0.0, secs)
+        return if (s < 10) String.format(Locale.US, "0:%04.1f", s)
+        else String.format(Locale.US, "%d:%02d", s.toInt() / 60, s.toInt() % 60)
     }
 
     // ---- clock ------------------------------------------------------------
@@ -443,7 +552,6 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         showOnThisDay(f.optJSONObject("onThisDay"))
         showCountdowns(f.optJSONArray("countdowns"))
         showAdGuard(f.optJSONObject("adguard"))
-        f.optJSONObject("tv")?.let { showTv(it) }
         f.optJSONObject("vitals")?.let { showVitals(it) }
         f.optJSONObject("speed")?.let { showSpeed(it) }
         f.optJSONObject("chessHistory")?.let { showRatings(it) }
@@ -562,27 +670,6 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         agShare.text = String.format(Locale.US, "%s%% of %,d lookups", a.get("percent").toString(), a.getInt("total"))
         agTop.text = if (a.isNull("topDomain")) "" else
             String.format(Locale.US, "Top: %s (%,d)", a.getString("topDomain"), a.getInt("topCount"))
-    }
-
-    private fun showTv(t: JSONObject) {
-        val board = SERVER + t.getString("board")
-        if (board != tvBoardUrl) {
-            tvBoardUrl = board
-            loadImage(tvBoard, board)
-        }
-        val players = t.getJSONArray("players")
-        // Top row is whoever sits at the top of the board.
-        val bottom = t.optString("orientation", "white")
-        val order = (0 until players.length()).map { players.getJSONObject(it) }
-            .sortedBy { if (it.getString("color") == bottom) 1 else 0 }
-        order.forEachIndexed { i, p ->
-            if (i > 1) return@forEachIndexed
-            val (name, rating, clock) = tvPlayers[i]
-            name.text = (if (p.getString("color") == "white") "○  " else "●  ") + p.getString("name")
-            rating.text = "Rated ${p.optInt("rating")}"
-            val secs = p.optInt("seconds")
-            clock.text = String.format(Locale.US, "%d:%02d", secs / 60, secs % 60)
-        }
     }
 
     private fun showWeather(w: JSONObject, air: JSONObject?) {
@@ -901,7 +988,6 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         const val PAUSE_MS = 300_000L
         const val FEED_MS = 60_000L
         const val FADE_MS = 450L
-        const val TV_POLL_MS = 3_000L
         const val LIVE = 5  // index of the Live page
         const val ACCENT_HEX = "#AA5CC3"
         val WHITE = Color.parseColor("#F4F4F7")
