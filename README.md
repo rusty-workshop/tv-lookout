@@ -7,9 +7,13 @@ Roku's developer installer refused to start. Same three screens, fed by
 
 1. **Clock + weather**: clock, date, Jacksonville conditions, air quality/UV,
    the next visible space station pass, and the next 12 hours.
-2. **Homelab**: service status dots, last backup, DVD ripper progress.
-3. **Chess**: Lichess correspondence boards from Gambit, ratings, and the
+2. **Homelab**: service status tiles, last backup, DVD ripper progress.
+3. **Today**: Wikipedia's "on this day" with a picture, and countdowns
+   (managed at http://192.168.1.158:8473/countdowns).
+4. **Homelab**: also AdGuard's blocked count and top blocked domain today.
+5. **Chess**: Lichess correspondence boards from Gambit, ratings, and the
    daily puzzle position.
+6. **Live**: the top Lichess TV game, updating every 3 seconds while shown.
 
 NWS weather alerts show as a banner over every screen. Pages rotate every 30
 seconds; left/right (or rewind/fast-forward) flips and pauses rotation for 5

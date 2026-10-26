@@ -70,6 +70,14 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private val stats = mutableListOf<Pair<TextView, TextView>>()
     private val hourCards = mutableListOf<List<TextView>>()
 
+    // today page
+    private val otdImage: ImageView
+    private val otdYear: TextView
+    private val otdAgo: TextView
+    private val otdText: TextView
+    private val countdownList = FrameLayout(context)
+    private val countdownEmpty: TextView
+
     // homelab page
     private val statusSummary: TextView
     private val serviceGrid = FrameLayout(context)
@@ -80,6 +88,9 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private val ripperBar: View
     private val ripperTrack: View
     private val ripperPct: TextView
+    private val agBlocked: TextView
+    private val agShare: TextView
+    private val agTop: TextView
 
     // chess page
     private val chips = FrameLayout(context)
@@ -91,6 +102,11 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private val moreGames: TextView
     private val puzzleBoard: ImageView
     private val puzzleText: TextView
+
+    // live page
+    private val tvBoard: ImageView
+    private val tvPlayers = mutableListOf<Triple<TextView, TextView, TextView>>()  // name, rating, clock
+    private var tvBoardUrl: String? = null
 
     init {
         background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
@@ -108,7 +124,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         }, 1000, -500, 1400, 1400)
 
         // ---- header: tabs on the left, time on the right ----
-        listOf("Weather", "Homelab", "Chess").forEachIndexed { i, name ->
+        listOf("Weather", "Today", "Homelab", "Chess", "Live").forEachIndexed { i, name ->
             tabs += text(canvas, 96 + i * 230, 52, 30, MUTED, MEDIUM, width = 210, height = 60).apply {
                 this.text = name
                 gravity = Gravity.CENTER
@@ -155,23 +171,48 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             )
         }
 
+        // ---- today ----
+        val today = page()
+        val ocard = card(today, 96, 226, 1100, 794)
+        eyebrow(ocard, 44, 40, "ON THIS DAY")
+        otdImage = image(ocard, 44, 96, 380, radius = 24f).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        otdYear = text(ocard, 470, 84, 110, WHITE, THIN)
+        otdAgo = text(ocard, 478, 214, 30, ACCENT_LIGHT, MEDIUM)
+        otdText = text(ocard, 478, 280, 36, SOFT, LIGHT, width = 580).apply {
+            setLineSpacing(10f, 1f)
+            maxLines = 10
+        }
+        val ccard = card(today, 1236, 226, 588, 794)
+        eyebrow(ccard, 40, 40, "COUNTDOWNS")
+        place(ccard, countdownList, 40, 96, 508, 680)
+        countdownEmpty = text(ccard, 40, 110, 30, MUTED, LIGHT, width = 508).apply {
+            text = "Add dates at\n192.168.1.158:8473/countdowns"
+            setLineSpacing(8f, 1f)
+        }
+
         // ---- homelab ----
         val lab = page()
         statusSummary = text(lab, 100, 226, 40, WHITE, LIGHT, width = 1160)
         place(lab, serviceGrid, 96, 300, 1164, 720)
 
-        val bcard = card(lab, 1300, 226, 524, 300)
-        eyebrow(bcard, 36, 32, "BACKUP")
-        backupBadge = text(bcard, 36, 84, 60, GREEN, LIGHT)
-        backupText = text(bcard, 36, 180, 30, SOFT, LIGHT, width = 460)
+        val bcard = card(lab, 1300, 226, 524, 196)
+        eyebrow(bcard, 36, 28, "BACKUP")
+        backupBadge = text(bcard, 36, 68, 50, GREEN, LIGHT)
+        backupText = text(bcard, 36, 138, 28, SOFT, LIGHT, width = 460)
 
-        val rcard = card(lab, 1300, 556, 524, 464)
-        eyebrow(rcard, 36, 32, "DVD RIPPER")
-        ripperState = text(rcard, 36, 84, 60, WHITE, LIGHT)
-        ripperTitle = text(rcard, 36, 180, 30, SOFT, LIGHT, width = 452).apply { maxLines = 3 }
-        ripperTrack = card(rcard, 36, 370, 452, 14, radius = 7f, fill = "#1FFFFFFF", stroke = null)
-        ripperBar = card(rcard, 36, 370, 0, 14, radius = 7f, fill = ACCENT_HEX, stroke = null)
-        ripperPct = text(rcard, 36, 398, 26, MUTED, MEDIUM, width = 452)
+        val acard = card(lab, 1300, 442, 524, 268)
+        eyebrow(acard, 36, 28, "ADGUARD TODAY")
+        agBlocked = text(acard, 36, 68, 50, WHITE, LIGHT, width = 460)
+        agShare = text(acard, 36, 138, 28, SOFT, LIGHT, width = 460)
+        agTop = text(acard, 36, 186, 26, MUTED, REGULAR, width = 460).apply { maxLines = 2 }
+
+        val rcard = card(lab, 1300, 730, 524, 290)
+        eyebrow(rcard, 36, 28, "DVD RIPPER")
+        ripperState = text(rcard, 36, 68, 50, WHITE, LIGHT)
+        ripperTitle = text(rcard, 36, 138, 28, SOFT, LIGHT, width = 452).apply { maxLines = 2 }
+        ripperTrack = card(rcard, 36, 222, 452, 14, radius = 7f, fill = "#1FFFFFFF", stroke = null)
+        ripperBar = card(rcard, 36, 222, 0, 14, radius = 7f, fill = ACCENT_HEX, stroke = null)
+        ripperPct = text(rcard, 36, 248, 24, MUTED, MEDIUM, width = 452)
 
         // ---- chess ----
         val chess = page()
@@ -197,6 +238,21 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         puzzleText = text(pcard, 30, 452, 32, WHITE, LIGHT, width = 340).apply { setLineSpacing(8f, 1f) }
         moreGames = text(pcard, 30, 640, 26, MUTED, REGULAR, width = 340)
 
+        // ---- live (Lichess TV) ----
+        val live = page()
+        tvBoard = image(live, 96, 226, 780, radius = 22f)
+        val lcard = card(live, 920, 226, 904, 780)
+        eyebrow(lcard, 48, 44, "LICHESS TV  ·  LIVE")
+        text(lcard, 48, 88, 30, MUTED, LIGHT, width = 800).text = "The top-rated game being played right now"
+        for (y in listOf(200, 470)) {
+            val row = card(lcard, 48, y, 808, 230, radius = 26f, fill = "#0DFFFFFF", stroke = null)
+            tvPlayers += Triple(
+                text(row, 36, 34, 44, WHITE, REGULAR, width = 540).apply { maxLines = 1 },
+                text(row, 36, 104, 30, SOFT, LIGHT, width = 540),
+                text(row, 560, 60, 80, WHITE, THIN, width = 220).apply { gravity = Gravity.END },
+            )
+        }
+
         showPage(0, animate = false)
     }
 
@@ -217,6 +273,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         tickClock()
         refresh()
         main.postDelayed(rotate, ROTATE_MS)
+        if (index == LIVE) main.post(pollTv)
     }
 
     fun stop() {
@@ -232,13 +289,13 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     // ---- navigation -------------------------------------------------------
 
     fun step(delta: Int) {
-        showPage((index + delta + 3) % 3)
+        showPage((index + delta + pages.size) % pages.size)
         pausedUntil = System.currentTimeMillis() + PAUSE_MS
     }
 
     private val rotate = object : Runnable {
         override fun run() {
-            if (screensaver || System.currentTimeMillis() >= pausedUntil) showPage((index + 1) % 3)
+            if (screensaver || System.currentTimeMillis() >= pausedUntil) showPage((index + 1) % pages.size)
             main.postDelayed(this, ROTATE_MS)
         }
     }
@@ -267,6 +324,19 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             } else null
         }
         headerTime.animate().alpha(if (i == 0) 0f else 1f).setDuration(FADE_MS)
+        main.removeCallbacks(pollTv)
+        if (i == LIVE && running) main.post(pollTv)
+    }
+
+    /** While the Live page is up, follow the game every few seconds. */
+    private val pollTv = object : Runnable {
+        override fun run() {
+            worker.execute {
+                val tv = runCatching { JSONObject(String(fetch("$SERVER/api/tv"))) }.getOrNull()
+                main.post { if (tv != null) showTv(tv) }
+            }
+            if (index == LIVE && running) main.postDelayed(this, TV_POLL_MS)
+        }
     }
 
     // ---- clock ------------------------------------------------------------
@@ -301,6 +371,70 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         showStatus(f)
         f.optJSONObject("chess")?.let { showChess(it) }
         showPuzzle(f.optJSONObject("puzzle"))
+        showOnThisDay(f.optJSONObject("onThisDay"))
+        showCountdowns(f.optJSONArray("countdowns"))
+        showAdGuard(f.optJSONObject("adguard"))
+        f.optJSONObject("tv")?.let { showTv(it) }
+    }
+
+    private fun showOnThisDay(o: JSONObject?) {
+        if (o == null) return
+        otdYear.text = o.getInt("year").toString()
+        otdAgo.text = "${o.getInt("yearsAgo")} years ago today"
+        otdText.text = o.getString("text")
+        if (o.isNull("image")) otdImage.visibility = GONE
+        else {
+            otdImage.visibility = VISIBLE
+            loadImage(otdImage, o.getString("image"))
+        }
+    }
+
+    private fun showCountdowns(list: JSONArray?) {
+        countdownList.removeAllViews()
+        val n = list?.length() ?: 0
+        countdownEmpty.visibility = if (n == 0) VISIBLE else GONE
+        for (i in 0 until minOf(n, 5)) {
+            val c = list!!.getJSONObject(i)
+            val days = c.getInt("days")
+            val row = card(countdownList, 0, i * 134, 508, 118, radius = 22f, fill = "#0DFFFFFF", stroke = null)
+            text(row, 0, 0, if (days == 0) 34 else 58, if (days <= 7) ACCENT_LIGHT else WHITE, LIGHT,
+                width = 150, height = 118).apply {
+                gravity = Gravity.CENTER
+                text = if (days == 0) "Today" else days.toString()
+            }
+            text(row, 160, 22, 32, WHITE, REGULAR, width = 330).apply { maxLines = 1; text = c.getString("name") }
+            text(row, 160, 68, 24, MUTED, LIGHT, width = 330).text =
+                (if (days == 1) "Tomorrow · " else if (days > 1) "days · " else "") + c.getString("date")
+        }
+    }
+
+    private fun showAdGuard(a: JSONObject?) {
+        if (a == null) return
+        agBlocked.text = withNote(String.format(Locale.US, "%,d", a.getInt("blocked")), "blocked")
+        agShare.text = String.format(Locale.US, "%s%% of %,d lookups", a.get("percent").toString(), a.getInt("total"))
+        agTop.text = if (a.isNull("topDomain")) "" else
+            String.format(Locale.US, "Top: %s (%,d)", a.getString("topDomain"), a.getInt("topCount"))
+    }
+
+    private fun showTv(t: JSONObject) {
+        val board = SERVER + t.getString("board")
+        if (board != tvBoardUrl) {
+            tvBoardUrl = board
+            loadImage(tvBoard, board)
+        }
+        val players = t.getJSONArray("players")
+        // Top row is whoever sits at the top of the board.
+        val bottom = t.optString("orientation", "white")
+        val order = (0 until players.length()).map { players.getJSONObject(it) }
+            .sortedBy { if (it.getString("color") == bottom) 1 else 0 }
+        order.forEachIndexed { i, p ->
+            if (i > 1) return@forEachIndexed
+            val (name, rating, clock) = tvPlayers[i]
+            name.text = (if (p.getString("color") == "white") "○  " else "●  ") + p.getString("name")
+            rating.text = "Rated ${p.optInt("rating")}"
+            val secs = p.optInt("seconds")
+            clock.text = String.format(Locale.US, "%d:%02d", secs / 60, secs % 60)
+        }
     }
 
     private fun showWeather(w: JSONObject, air: JSONObject?) {
@@ -606,13 +740,13 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             parent.addView(this, LayoutParams(width, height).apply { leftMargin = x; topMargin = y })
         }
 
-    private fun image(parent: FrameLayout, x: Int, y: Int, size: Int) =
+    private fun image(parent: FrameLayout, x: Int, y: Int, size: Int, radius: Float = 18f) =
         ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             clipToOutline = true
             outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(view: View, outline: Outline) =
-                    outline.setRoundRect(0, 0, view.width, view.height, 18f)
+                    outline.setRoundRect(0, 0, view.width, view.height, radius)
             }
         }.also { place(parent, it, x, y, size, size) }
 
@@ -625,6 +759,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         const val PAUSE_MS = 300_000L
         const val FEED_MS = 60_000L
         const val FADE_MS = 450L
+        const val TV_POLL_MS = 3_000L
+        const val LIVE = 4  // index of the Live page
         const val ACCENT_HEX = "#AA5CC3"
         val WHITE = Color.parseColor("#F4F4F7")
         val SOFT = Color.parseColor("#C9CAD6")
