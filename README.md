@@ -24,6 +24,12 @@ Roku's developer installer refused to start. Same three screens, fed by
    **Up/down** picks the game type (Classical by default, then Rapid, Blitz,
    Bullet, Chess960, Top rated), via `api/tv/<channel>/feed`; remembered.
 
+7. **Sky**: a radar of aircraft within 40 nm (`RadarView`: range rings, a
+   slow sweep, arrows along each track coloured by altitude, callsigns on the
+   nearest), refreshed every 10 s while shown, with the nearest five flights
+   and their routes; plus the next launch from Cape Canaveral/Kennedy and a
+   live T-minus countdown to the next exact-time launch anywhere.
+
 NWS weather alerts show as a banner over every screen. Pages rotate every 30
 seconds; left/right (or rewind/fast-forward) flips and pauses rotation for 5
 minutes. **OK pins the current page** (a "Pinned" chip shows) so it stops

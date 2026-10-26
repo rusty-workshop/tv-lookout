@@ -116,6 +116,18 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private val ratingLegend: TextView
     private val resultsRow = FrameLayout(context)
 
+    // sky page
+    private val radar = RadarView(context)
+    private lateinit var launchMission: TextView
+    private lateinit var launchRocket: TextView
+    private lateinit var launchWhen: TextView
+    private lateinit var launchLater: TextView
+    private lateinit var nextLaunchLine: TextView
+    private lateinit var flightsTitle: TextView
+    private val flightRows = mutableListOf<Triple<TextView, TextView, TextView>>()
+    private var nextLaunchAt = 0L
+    private var nextLaunchName = ""
+
     // pinning: OK on the remote keeps the current page up
     private val prefs = context.getSharedPreferences("lookout", Context.MODE_PRIVATE)
     private var pinned = false
@@ -157,8 +169,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         }, 1000, -500, 1400, 1400)
 
         // ---- header: tabs on the left, time on the right ----
-        listOf("Weather", "Today", "Homelab", "Server", "Chess", "Live").forEachIndexed { i, name ->
-            tabs += text(canvas, 96 + i * 230, 52, 30, MUTED, MEDIUM, width = 210, height = 60).apply {
+        listOf("Weather", "Today", "Homelab", "Server", "Chess", "Live", "Sky").forEachIndexed { i, name ->
+            tabs += text(canvas, 96 + i * 200, 52, 28, MUTED, MEDIUM, width = 190, height = 60).apply {
                 this.text = name
                 gravity = Gravity.CENTER
             }
@@ -327,6 +339,29 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             )
         }
 
+        // ---- sky: planes overhead + rocket launches ----
+        val sky = page()
+        place(sky, radar, 96, 226, 780, 780)
+        val lc = card(sky, 920, 226, 904, 380)
+        eyebrow(lc, 44, 34, "NEXT LAUNCH FROM FLORIDA")
+        launchMission = text(lc, 44, 80, 40, WHITE, REGULAR, width = 816).apply { maxLines = 1 }
+        launchRocket = text(lc, 44, 136, 28, SOFT, LIGHT, width = 816).apply { maxLines = 1 }
+        launchWhen = text(lc, 44, 180, 30, ACCENT_LIGHT, MEDIUM, width = 816).apply { maxLines = 1 }
+        launchLater = text(lc, 44, 226, 24, MUTED, REGULAR, width = 816).apply { maxLines = 1 }
+        card(lc, 44, 276, 816, 2, radius = 1f, fill = "#1FFFFFFF", stroke = null)
+        text(lc, 44, 296, 20, MUTED, MEDIUM).apply { text = "NEXT ANYWHERE"; letterSpacing = 0.12f }
+        nextLaunchLine = text(lc, 44, 328, 28, SOFT, LIGHT, width = 816).apply { maxLines = 1 }
+        val fc = card(sky, 920, 626, 904, 380)
+        flightsTitle = eyebrow(fc, 44, 34, "OVERHEAD NOW")
+        for (i in 0 until 5) {
+            val y = 80 + i * 56
+            flightRows += Triple(
+                text(fc, 44, y, 30, WHITE, MEDIUM, width = 180).apply { maxLines = 1 },
+                text(fc, 230, y + 2, 26, SOFT, LIGHT, width = 430).apply { maxLines = 1 },
+                text(fc, 660, y + 2, 26, MUTED, REGULAR, width = 200).apply { gravity = Gravity.END; maxLines = 1 },
+            )
+        }
+
         if (!screensaver && prefs.getBoolean("pinned", false)) {
             pinned = true
             pinChip.visibility = VISIBLE
@@ -352,6 +387,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         refresh()
         main.postDelayed(rotate, ROTATE_MS)
         if (index == LIVE) startTv()
+        if (index == SKY_PAGE) main.post(pollPlanes)
     }
 
     fun stop() {
@@ -430,6 +466,85 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         headerTime.animate().alpha(if (i == 0 || pinned) 0f else 1f).setDuration(FADE_MS)
         if (pinned) prefs.edit().putInt("page", i).apply()
         if (i == LIVE && running) startTv() else stopTv()
+        main.removeCallbacks(pollPlanes)
+        if (i == SKY_PAGE && running) main.post(pollPlanes)
+    }
+
+    // ---- Sky ---------------------------------------------------------------
+
+    /** While the Sky page is up, refresh the aircraft every 10 seconds. */
+    private val pollPlanes = object : Runnable {
+        override fun run() {
+            worker.execute {
+                val p = runCatching { JSONObject(String(fetch("$SERVER/api/planes"))) }
+                    .onFailure { Log.w(TAG, "planes: $it") }.getOrNull()
+                main.post { if (p != null) showPlanes(p) }
+            }
+            if (index == SKY_PAGE && running) main.postDelayed(this, PLANES_MS)
+        }
+    }
+
+    private fun showPlanes(p: JSONObject) {
+        val all = p.getJSONArray("aircraft")
+        val nearest = p.getJSONArray("nearest")
+        val near = (0 until nearest.length()).map { nearest.getJSONObject(it).getString("hex") }.toSet()
+        val center = p.getJSONArray("center")
+        radar.setData(center.getDouble(0), center.getDouble(1), p.getDouble("rangeNm"),
+            (0 until all.length()).map { all.getJSONObject(it) }.filter { !it.getBoolean("ground") }.map {
+                RadarView.Plane(it.getDouble("lat"), it.getDouble("lon"), it.getDouble("track").toFloat(),
+                    it.getInt("alt"), it.getString("callsign"), it.getString("hex") in near)
+            })
+        flightsTitle.text = "OVERHEAD NOW  ·  ${all.length()} AIRCRAFT WITHIN 40 NM"
+        flightRows.forEachIndexed { i, (call, route, alt) ->
+            if (i >= nearest.length()) {
+                call.text = ""; route.text = ""; alt.text = ""
+                return@forEachIndexed
+            }
+            val f = nearest.getJSONObject(i)
+            call.text = f.getString("callsign")
+            val r = f.optJSONObject("route")
+            route.text = when {
+                r != null && !r.isNull("fromCity") && !r.isNull("toCity") ->
+                    "${r.getString("fromCity")} → ${r.getString("toCity")}"
+                r != null && !r.isNull("airline") -> r.getString("airline")
+                else -> listOfNotNull(f.optString("type").ifEmpty { null }, "private / unlisted").joinToString(" · ")
+            }
+            alt.text = String.format(Locale.US, "%,d ft", f.getInt("alt"))
+        }
+    }
+
+    private fun showLaunches(l: JSONObject) {
+        val fl = l.getJSONArray("florida")
+        if (fl.length() > 0) {
+            val a = fl.getJSONObject(0)
+            launchMission.text = a.getString("mission")
+            launchRocket.text = listOfNotNull(a.optString("rocket").ifEmpty { null },
+                a.optString("provider").ifEmpty { null }, a.optString("pad").ifEmpty { null }).joinToString("  ·  ")
+            launchWhen.text = a.getString("when") + (a.optString("sky").let { if (it.isEmpty()) "" else "  ·  $it" })
+            launchLater.text = if (fl.length() > 1) {
+                val b = fl.getJSONObject(1)
+                "Then: ${b.getString("mission")}  ·  ${b.getString("when")}"
+            } else ""
+        } else {
+            launchMission.text = "No Florida launches scheduled"
+            launchRocket.text = ""; launchWhen.text = ""; launchLater.text = ""
+        }
+        val n = l.optJSONObject("next")
+        if (n != null) {
+            nextLaunchAt = runCatching { java.time.Instant.parse(n.getString("net")).toEpochMilli() }.getOrDefault(0L)
+            nextLaunchName = "${n.getString("mission")}  ·  ${n.optString("where").substringBefore(",")}"
+        }
+        tickLaunch()
+    }
+
+    /** Counts down to the next exact-time launch anywhere, every second with the clock. */
+    private fun tickLaunch() {
+        if (nextLaunchAt == 0L) return
+        val left = (nextLaunchAt - System.currentTimeMillis()) / 1000
+        val t = kotlin.math.abs(left)
+        val clock = if (t >= 86400) String.format(Locale.US, "%dd %02d:%02d:%02d", t / 86400, t % 86400 / 3600, t % 3600 / 60, t % 60)
+        else String.format(Locale.US, "%02d:%02d:%02d", t / 3600, t % 3600 / 60, t % 60)
+        nextLaunchLine.text = "$nextLaunchName  ·  T${if (left >= 0) "−" else "+"}$clock"
     }
 
     // ---- Lichess TV, live -------------------------------------------------
@@ -556,6 +671,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         bigTime.text = clock
         headerTime.text = clock
         bigDate.text = SimpleDateFormat("EEEE, MMMM d", Locale.US).format(now)
+        tickLaunch()
         if (running) main.postDelayed({ tickClock() }, 1000L - System.currentTimeMillis() % 1000)
     }
 
@@ -586,6 +702,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         f.optJSONObject("vitals")?.let { showVitals(it) }
         f.optJSONObject("speed")?.let { showSpeed(it) }
         f.optJSONObject("chessHistory")?.let { showRatings(it) }
+        f.optJSONObject("launches")?.let { showLaunches(it) }
     }
 
     private fun showVitals(v: JSONObject) {
@@ -1020,6 +1137,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         const val FEED_MS = 60_000L
         const val FADE_MS = 450L
         const val LIVE = 5  // index of the Live page
+        const val SKY_PAGE = 6
+        const val PLANES_MS = 10_000L
         // Lichess TV channels (API name, label), Classical first as the default.
         val TV_CHANNELS = listOf("classical" to "Classical", "rapid" to "Rapid", "blitz" to "Blitz",
             "bullet" to "Bullet", "chess960" to "Chess960", "best" to "Top rated")
