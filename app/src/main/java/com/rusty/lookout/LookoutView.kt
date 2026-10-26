@@ -62,8 +62,9 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     // weather page
     private val bigTime: TextView
     private val bigDate: TextView
-    private val issCard: FrameLayout
-    private val issText: TextView
+    private val tidesCard: FrameLayout
+    private val tidesNow: TextView
+    private val tidesNext: TextView
     private val weatherIcon: TextView
     private val temp: TextView
     private val summary: TextView
@@ -147,6 +148,11 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private lateinit var tonightIss: TextView
     private var lightningCount = 0
 
+    // settings from latitude-lookout's /settings page
+    private var order: List<Int> = (0 until 11).toList()  // visible pages, in rotation order
+    private var rotateMs = ROTATE_MS
+    private var startApplied = false
+
     // pinning: OK on the remote keeps the current page up
     private val prefs = context.getSharedPreferences("lookout", Context.MODE_PRIVATE)
     private var pinned = false
@@ -219,11 +225,9 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         val weather = page()
         bigTime = text(weather, 88, 200, 250, WHITE, THIN)
         bigDate = text(weather, 100, 480, 46, SOFT, LIGHT)
-        issCard = card(weather, 96, 580, 800, 84, radius = 42f)
-        issText = text(issCard, 36, 0, 30, SOFT, LIGHT, width = 740, height = 84).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            maxLines = 1
-        }
+        tidesCard = card(weather, 96, 566, 800, 120, radius = 28f)
+        tidesNow = text(tidesCard, 32, 20, 28, SOFT, MEDIUM, width = 740).apply { maxLines = 1 }
+        tidesNext = text(tidesCard, 32, 66, 26, MUTED, LIGHT, width = 740).apply { maxLines = 1 }
 
         val wcard = card(weather, 980, 220, 844, 470)
         weatherIcon = text(wcard, 40, 30, 120, WHITE, LIGHT)
@@ -557,15 +561,48 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         else "The top $name game being played right now"
     }
 
+    private fun neighbour(delta: Int): Int {
+        val pos = order.indexOf(index).let { if (it < 0) 0 else it }
+        return order[(pos + delta + order.size) % order.size]
+    }
+
+    /**
+     * Apply the tab choices from the settings page: hidden tabs disappear and the
+     * rest close up in the chosen order; rotation and arrows only visit those.
+     */
+    private fun applySettings(st: JSONObject) {
+        val pagesJson = st.getJSONArray("pages")
+        val newOrder = (0 until pagesJson.length()).map { pagesJson.getJSONObject(it) }
+            .filter { it.getBoolean("enabled") }
+            .mapNotNull { PAGE_KEYS.indexOf(it.getString("key")).takeIf { i -> i >= 0 } }
+            .ifEmpty { listOf(0) }
+        rotateMs = st.optLong("rotateSec", 30) * 1000
+        if (newOrder != order) {
+            order = newOrder
+            tabs.forEachIndexed { i, tab ->
+                val pos = order.indexOf(i)
+                tab.visibility = if (pos < 0) GONE else VISIBLE
+                if (pos >= 0) (tab.layoutParams as LayoutParams).leftMargin = 92 + pos * 146
+                tab.requestLayout()
+            }
+        }
+        val start = PAGE_KEYS.indexOf(st.optString("startPage", "weather")).takeIf { it in order } ?: order.first()
+        when {
+            !startApplied && !pinned && !screensaver -> showPage(start, animate = false)
+            index !in order -> showPage(order.first())
+        }
+        startApplied = true
+    }
+
     fun step(delta: Int) {
-        showPage((index + delta + pages.size) % pages.size)
+        showPage(neighbour(delta))
         pausedUntil = System.currentTimeMillis() + PAUSE_MS
     }
 
     private val rotate = object : Runnable {
         override fun run() {
-            if (screensaver || (!pinned && System.currentTimeMillis() >= pausedUntil)) showPage((index + 1) % pages.size)
-            main.postDelayed(this, ROTATE_MS)
+            if (screensaver || (!pinned && System.currentTimeMillis() >= pausedUntil)) showPage(neighbour(1))
+            main.postDelayed(this, rotateMs)
         }
     }
 
@@ -979,7 +1016,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
 
     private fun show(f: JSONObject) {
         f.optJSONObject("weather")?.let { showWeather(it, f.optJSONObject("air")) }
-        showIss(f.optJSONObject("iss"))
+        showTides(f.optJSONObject("tides"))
+        f.optJSONObject("settings")?.let { applySettings(it) }
         showAlerts(f.optJSONArray("alerts"))
         showStatus(f)
         f.optJSONObject("chess")?.let { showChess(it) }
@@ -1153,11 +1191,25 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         }
     }
 
-    private fun showIss(iss: JSONObject?) {
-        issCard.visibility = if (iss == null) GONE else VISIBLE
-        iss ?: return
-        issText.text = "🛰   Space station  ·  ${iss.getString("when")}  ·  " +
-            "${iss.getInt("maxElevation")}° up  ·  ${iss.getInt("minutes")} min"
+    /** Next highs/lows at Mayport, and how far the water is running above or below prediction. */
+    private fun showTides(t: JSONObject?) {
+        tidesCard.visibility = if (t == null) GONE else VISIBLE
+        t ?: return
+        val now = t.optJSONObject("now")
+        tidesNow.text = "🌊  Tides at ${t.getString("station")}" + (now?.let {
+            val d = it.getDouble("diff")
+            when {
+                d >= 0.5 -> "  ·  water ${d} ft above predicted"
+                d <= -0.5 -> "  ·  water ${-d} ft below predicted"
+                else -> "  ·  running normal"
+            }
+        } ?: "")
+        tidesNow.setTextColor(if ((now?.optDouble("diff") ?: 0.0) >= 1.0) Color.parseColor("#FDBA74") else SOFT)
+        val next = t.getJSONArray("next")
+        tidesNext.text = (0 until minOf(next.length(), 3)).joinToString("   ·   ") {
+            val n = next.getJSONObject(it)
+            "${n.getString("type")} ${n.getString("time")}  ${n.getDouble("ft")} ft"
+        }
     }
 
     /** Most severe first; red for Extreme/Severe, amber for Moderate, grey otherwise. */
@@ -1430,6 +1482,9 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         const val W = 1920
         const val H = 1080
         const val ROTATE_MS = 30_000L
+        // Page keys, in build order; must match latitude-lookout's PAGES.
+        val PAGE_KEYS = listOf("weather", "today", "homelab", "server", "chess", "live", "sky",
+            "airport", "radar", "space", "tonight")
         const val PAUSE_MS = 300_000L
         const val FEED_MS = 60_000L
         const val FADE_MS = 450L

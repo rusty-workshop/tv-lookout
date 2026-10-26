@@ -45,6 +45,12 @@ The Sky radar also plots lightning (NOAA GOES-19 GLM) as fading star bursts.
 Requests send a `Lookout` User-Agent: NWS answers Android's default
 `Dalvik/...` with 403.
 
+The Weather page has a tides card (NOAA Mayport: next highs/lows, and how
+far the water is running above or below prediction). Which tabs show, their
+order, seconds per page and the start page come from the settings page at
+http://192.168.1.158:8473/settings (`settings` in the feed; the app applies it
+on every feed refresh). `PAGE_KEYS` must match the feed's `PAGES`.
+
 NWS weather alerts show as a banner over every screen. Pages rotate every 30
 seconds; left/right (or rewind/fast-forward) flips and pauses rotation for 5
 minutes. **OK pins the current page** (a "Pinned" chip shows) so it stops
