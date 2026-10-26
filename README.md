@@ -16,7 +16,11 @@ seconds; left/right (or rewind/fast-forward) flips and pauses rotation for 5
 minutes. The screen stays on while the app is open.
 
 `LookoutView` lays everything out on a fixed 1920x1080 canvas scaled to the
-screen, so positions match the Roku version. It's used by both
+screen. v2 design: dark gradient with a soft purple glow, rounded translucent
+cards, a thin clock, weather emoji and stat tiles, tabs instead of page dots,
+fade-and-slide page changes, service tiles (red-tinted when down), chess
+boards in cards with "Your move"/"Their move" badges. (The Roku version
+still uses the original plain layout.) It's used by both
 `MainActivity` (the app) and `LookoutDream` (a screensaver, selectable on
 the latitude-screensaver picker page or in the TV's screensaver settings).
 
