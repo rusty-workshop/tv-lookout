@@ -32,11 +32,13 @@ Roku's developer installer refused to start. Same three screens, fed by
 
 8. **Radar**: the NWS KJAX radar loop (animated GIF via `ImageDecoder`,
    refreshed at most every 5 min) with conditions and 12-hour rain chances.
-9. **Port**: ships around JAXPORT/the St. Johns River on a 20 nm map
-   (moving ones bright and labelled), listed with type, length, destination
-   and speed. Needs the aisstream.io key on the Latitude.
-10. **Tonight**: Mercury to Saturn (visible or not, best time, direction,
+9. **Tonight**: Mercury to Saturn (visible or not, best time, direction,
     altitude, rise/set) and the next visible ISS pass.
+
+A Port page (ships via aisstream.io) was built and then removed: aisstream
+has no receiver covering Jacksonville. `RadarView` still knows how to draw
+ships, and latitude-lookout still collects them, if coverage (or a local
+RTL-SDR receiver) ever appears.
 
 The Sky radar also plots lightning (NOAA GOES-19 GLM) as fading star bursts.
 Requests send a `Lookout` User-Agent: NWS answers Android's default

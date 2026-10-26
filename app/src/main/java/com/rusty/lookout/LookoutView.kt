@@ -128,15 +128,11 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private var nextLaunchAt = 0L
     private var nextLaunchName = ""
 
-    // radar / port / tonight pages
+    // radar / tonight pages
     private val radarImage = ImageView(context)
     private lateinit var radarNote: TextView
     private lateinit var radarHours: TextView
     private var radarLoadedAt = 0L
-    private val portMap = RadarView(context)
-    private lateinit var portTitle: TextView
-    private lateinit var portEmpty: TextView
-    private val shipRows = mutableListOf<Triple<TextView, TextView, TextView>>()
     private lateinit var tonightWindow: TextView
     private val planetCards = mutableListOf<List<TextView>>()  // name, status, best, rise/set
     private val planetDots = mutableListOf<View>()
@@ -184,7 +180,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         }, 1000, -500, 1400, 1400)
 
         // ---- header: tabs on the left, time on the right ----
-        listOf("Weather", "Today", "Homelab", "Server", "Chess", "Live", "Sky", "Radar", "Port", "Tonight")
+        listOf("Weather", "Today", "Homelab", "Server", "Chess", "Live", "Sky", "Radar", "Tonight")
             .forEachIndexed { i, name ->
             tabs += text(canvas, 96 + i * 158, 52, 25, MUTED, MEDIUM, width = 150, height = 60).apply {
                 this.text = name
@@ -400,21 +396,6 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             setLineSpacing(6f, 1f)
         }
 
-        // ---- port: ships around JAXPORT ----
-        val port = page()
-        place(port, portMap, 96, 226, 780, 780)
-        val pc = card(port, 920, 226, 904, 780)
-        portTitle = eyebrow(pc, 44, 40, "JAXPORT  ·  ST. JOHNS RIVER")
-        for (i in 0 until 9) {
-            val y = 96 + i * 72
-            shipRows += Triple(
-                text(pc, 44, y, 30, WHITE, MEDIUM, width = 420).apply { maxLines = 1 },
-                text(pc, 44, y + 36, 22, MUTED, REGULAR, width = 600).apply { maxLines = 1 },
-                text(pc, 620, y + 4, 26, SOFT, LIGHT, width = 240).apply { gravity = Gravity.END; maxLines = 1 },
-            )
-        }
-        portEmpty = text(pc, 44, 110, 32, MUTED, LIGHT, width = 816).apply { setLineSpacing(8f, 1f) }
-
         // ---- tonight: planets ----
         val tonight = page()
         tonightWindow = text(tonight, 100, 226, 40, WHITE, LIGHT, width = 1700)
@@ -470,7 +451,6 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         main.postDelayed(rotate, ROTATE_MS)
         if (index == LIVE) startTv()
         if (index == SKY_PAGE) main.post(pollPlanes)
-        if (index == PORT_PAGE) main.post(pollShips)
         if (index == RADAR_PAGE) loadRadar()
     }
 
@@ -552,8 +532,6 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         if (i == LIVE && running) startTv() else stopTv()
         main.removeCallbacks(pollPlanes)
         if (i == SKY_PAGE && running) main.post(pollPlanes)
-        main.removeCallbacks(pollShips)
-        if (i == PORT_PAGE && running) main.post(pollShips)
         if (i == RADAR_PAGE && running && System.currentTimeMillis() - radarLoadedAt > RADAR_MS) loadRadar()
     }
 
@@ -667,49 +645,6 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         radarHours.text = (0 until hrs.length()).joinToString("\n") {
             val h = hrs.getJSONObject(it)
             "${hour12(h.getString("time")).padEnd(6)}   ${h.getInt("rain")}%   ${h.getString("summary")}"
-        }
-    }
-
-    // ---- Port --------------------------------------------------------------
-
-    private val pollShips = object : Runnable {
-        override fun run() {
-            worker.execute {
-                val d = runCatching { JSONObject(String(fetch("$SERVER/api/ships"))) }
-                    .onFailure { Log.w(TAG, "ships: $it") }.getOrNull()
-                main.post { if (d != null) showShips(d) }
-            }
-            if (index == PORT_PAGE && running) main.postDelayed(this, PLANES_MS)
-        }
-    }
-
-    private fun showShips(d: JSONObject) {
-        val list = d.getJSONArray("ships").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
-        if (!d.getBoolean("configured") || list.isEmpty()) {
-            portEmpty.text = if (!d.getBoolean("configured"))
-                "Ships need a free aisstream.io API key.\nOnce it's added on the Latitude, ships in\nthe port and river show up here."
-            else "Listening for ships…\nThey appear as they report their position."
-            shipRows.forEach { (a, b, c) -> a.text = ""; b.text = ""; c.text = "" }
-        } else portEmpty.text = ""
-        // Moving ships first, then the biggest.
-        val sorted = list.sortedWith(compareByDescending<JSONObject> { it.optDouble("speed") >= 1 }
-            .thenByDescending { it.optInt("length") })
-        val top = sorted.take(9).map { it.optLong("mmsi") }.toSet()
-        portMap.setShips(PORT_LAT, PORT_LON, PORT_RANGE, list.map {
-            RadarView.Ship(it.getDouble("lat"), it.getDouble("lon"), it.optDouble("heading").toFloat(),
-                it.optString("type").ifEmpty { null }, it.optString("name").ifEmpty { "Unknown" },
-                it.optDouble("speed") >= 1, it.optLong("mmsi") in top && it.optDouble("speed") >= 1)
-        })
-        portTitle.text = "JAXPORT  ·  ST. JOHNS RIVER  ·  ${list.size} VESSELS"
-        shipRows.forEachIndexed { i, (name, detail, speed) ->
-            if (i >= sorted.size) { name.text = ""; detail.text = ""; speed.text = ""; return@forEachIndexed }
-            val s = sorted[i]
-            name.text = s.optString("name").ifEmpty { "MMSI ${s.optLong("mmsi")}" }
-            detail.text = listOfNotNull(s.optString("type").ifEmpty { null },
-                s.optInt("length").takeIf { it > 0 }?.let { "${it} m" },
-                s.optString("destination").ifEmpty { null }?.let { "→ $it" }).joinToString("  ·  ")
-            val kn = s.optDouble("speed")
-            speed.text = if (kn >= 1) String.format(Locale.US, "%.1f kn", kn) else "moored"
         }
     }
 
@@ -1336,13 +1271,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         const val LIVE = 5  // index of the Live page
         const val SKY_PAGE = 6
         const val RADAR_PAGE = 7
-        const val PORT_PAGE = 8
         const val RADAR_MS = 300_000L
         const val RADAR_URL = "https://radar.weather.gov/ridge/standard/KJAX_loop.gif"
-        // Port map: centred between downtown and the river mouth.
-        const val PORT_LAT = 30.385
-        const val PORT_LON = -81.50
-        const val PORT_RANGE = 20.0
         const val PLANES_MS = 10_000L
         // Lichess TV channels (API name, label), Classical first as the default.
         val TV_CHANNELS = listOf("classical" to "Classical", "rapid" to "Rapid", "blitz" to "Blitz",
