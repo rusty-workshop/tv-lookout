@@ -30,6 +30,18 @@ Roku's developer installer refused to start. Same three screens, fed by
    and their routes; plus the next launch from Cape Canaveral/Kennedy and a
    live T-minus countdown to the next exact-time launch anywhere.
 
+8. **Radar**: the NWS KJAX radar loop (animated GIF via `ImageDecoder`,
+   refreshed at most every 5 min) with conditions and 12-hour rain chances.
+9. **Port**: ships around JAXPORT/the St. Johns River on a 20 nm map
+   (moving ones bright and labelled), listed with type, length, destination
+   and speed. Needs the aisstream.io key on the Latitude.
+10. **Tonight**: Mercury to Saturn (visible or not, best time, direction,
+    altitude, rise/set) and the next visible ISS pass.
+
+The Sky radar also plots lightning (NOAA GOES-19 GLM) as fading star bursts.
+Requests send a `Lookout` User-Agent: NWS answers Android's default
+`Dalvik/...` with 403.
+
 NWS weather alerts show as a banner over every screen. Pages rotate every 30
 seconds; left/right (or rewind/fast-forward) flips and pauses rotation for 5
 minutes. **OK pins the current page** (a "Pinned" chip shows) so it stops

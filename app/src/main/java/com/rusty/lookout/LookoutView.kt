@@ -128,6 +128,21 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private var nextLaunchAt = 0L
     private var nextLaunchName = ""
 
+    // radar / port / tonight pages
+    private val radarImage = ImageView(context)
+    private lateinit var radarNote: TextView
+    private lateinit var radarHours: TextView
+    private var radarLoadedAt = 0L
+    private val portMap = RadarView(context)
+    private lateinit var portTitle: TextView
+    private lateinit var portEmpty: TextView
+    private val shipRows = mutableListOf<Triple<TextView, TextView, TextView>>()
+    private lateinit var tonightWindow: TextView
+    private val planetCards = mutableListOf<List<TextView>>()  // name, status, best, rise/set
+    private val planetDots = mutableListOf<View>()
+    private lateinit var tonightIss: TextView
+    private var lightningCount = 0
+
     // pinning: OK on the remote keeps the current page up
     private val prefs = context.getSharedPreferences("lookout", Context.MODE_PRIVATE)
     private var pinned = false
@@ -169,19 +184,20 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         }, 1000, -500, 1400, 1400)
 
         // ---- header: tabs on the left, time on the right ----
-        listOf("Weather", "Today", "Homelab", "Server", "Chess", "Live", "Sky").forEachIndexed { i, name ->
-            tabs += text(canvas, 96 + i * 200, 52, 28, MUTED, MEDIUM, width = 190, height = 60).apply {
+        listOf("Weather", "Today", "Homelab", "Server", "Chess", "Live", "Sky", "Radar", "Port", "Tonight")
+            .forEachIndexed { i, name ->
+            tabs += text(canvas, 96 + i * 158, 52, 25, MUTED, MEDIUM, width = 150, height = 60).apply {
                 this.text = name
                 gravity = Gravity.CENTER
             }
         }
         headerTime = text(canvas, 1500, 50, 46, WHITE, LIGHT, width = 324).apply { gravity = Gravity.END }
-        pinChip = text(canvas, 1490, 56, 24, ACCENT_LIGHT, MEDIUM, height = 50).apply {
+        pinChip = text(canvas, 1640, 1028, 22, ACCENT_LIGHT, MEDIUM, height = 44).apply {
             text = "📌  Pinned"
             gravity = Gravity.CENTER
             setPadding(22, 0, 22, 0)
             background = GradientDrawable().apply {
-                cornerRadius = 25f
+                cornerRadius = 22f
                 setColor(Color.parseColor("#26AA5CC3"))
                 setStroke(2, Color.parseColor("#80AA5CC3"))
             }
@@ -362,6 +378,72 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             )
         }
 
+        // ---- weather radar (NWS KJAX loop) ----
+        val radarPage = page()
+        val rframe = card(radarPage, 96, 226, 852, 780, radius = 24f, fill = "#FF0C0E14")
+        place(rframe, radarImage, 0, 0, 852, 780)
+        radarImage.apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            clipToOutline = true
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) =
+                    outline.setRoundRect(0, 0, view.width, view.height, 24f)
+            }
+        }
+        val rcard3 = card(radarPage, 990, 226, 834, 780)
+        eyebrow(rcard3, 44, 40, "WEATHER RADAR  ·  JACKSONVILLE")
+        radarNote = text(rcard3, 44, 90, 34, WHITE, LIGHT, width = 746).apply { setLineSpacing(8f, 1f) }
+        text(rcard3, 44, 300, 20, MUTED, MEDIUM).apply { text = "RAIN CHANCE, NEXT 12 HOURS"; letterSpacing = 0.12f }
+        radarHours = text(rcard3, 44, 340, 30, SOFT, LIGHT, width = 746).apply { setLineSpacing(14f, 1f) }
+        text(rcard3, 44, 690, 22, MUTED, REGULAR, width = 746).apply {
+            text = "National Weather Service radar, last ~hour, looping.\nGreen = light rain · yellow/red = heavy storms"
+            setLineSpacing(6f, 1f)
+        }
+
+        // ---- port: ships around JAXPORT ----
+        val port = page()
+        place(port, portMap, 96, 226, 780, 780)
+        val pc = card(port, 920, 226, 904, 780)
+        portTitle = eyebrow(pc, 44, 40, "JAXPORT  ·  ST. JOHNS RIVER")
+        for (i in 0 until 9) {
+            val y = 96 + i * 72
+            shipRows += Triple(
+                text(pc, 44, y, 30, WHITE, MEDIUM, width = 420).apply { maxLines = 1 },
+                text(pc, 44, y + 36, 22, MUTED, REGULAR, width = 600).apply { maxLines = 1 },
+                text(pc, 620, y + 4, 26, SOFT, LIGHT, width = 240).apply { gravity = Gravity.END; maxLines = 1 },
+            )
+        }
+        portEmpty = text(pc, 44, 110, 32, MUTED, LIGHT, width = 816).apply { setLineSpacing(8f, 1f) }
+
+        // ---- tonight: planets ----
+        val tonight = page()
+        tonightWindow = text(tonight, 100, 226, 40, WHITE, LIGHT, width = 1700)
+        val planetColors = listOf("#A8A29E", "#FEF3C7", "#F87171", "#E7C9A9", "#FCD34D")
+        for (i in 0 until 5) {
+            val c = card(tonight, 96 + i * 350, 300, 328, 440)
+            planetDots += View(context).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    gradientType = GradientDrawable.RADIAL_GRADIENT
+                    gradientRadius = 60f
+                    setGradientCenter(0.35f, 0.35f)
+                    colors = intArrayOf(Color.WHITE, Color.parseColor(planetColors[i]))
+                }
+            }
+            place(c, planetDots[i], 34, 34, 84, 84)
+            planetCards += listOf(
+                text(c, 34, 140, 44, WHITE, REGULAR, width = 270),
+                text(c, 34, 204, 22, WHITE, MEDIUM, height = 40).apply {
+                    gravity = Gravity.CENTER; setPadding(18, 0, 18, 0)
+                },
+                text(c, 34, 266, 26, SOFT, LIGHT, width = 270).apply { setLineSpacing(6f, 1f) },
+                text(c, 34, 360, 22, MUTED, REGULAR, width = 270).apply { setLineSpacing(6f, 1f) },
+            )
+        }
+        val ic = card(tonight, 96, 770, 1728, 236)
+        eyebrow(ic, 44, 40, "SPACE STATION")
+        tonightIss = text(ic, 44, 90, 38, WHITE, LIGHT, width = 1640).apply { setLineSpacing(8f, 1f) }
+
         if (!screensaver && prefs.getBoolean("pinned", false)) {
             pinned = true
             pinChip.visibility = VISIBLE
@@ -388,6 +470,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         main.postDelayed(rotate, ROTATE_MS)
         if (index == LIVE) startTv()
         if (index == SKY_PAGE) main.post(pollPlanes)
+        if (index == PORT_PAGE) main.post(pollShips)
+        if (index == RADAR_PAGE) loadRadar()
     }
 
     fun stop() {
@@ -468,6 +552,9 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         if (i == LIVE && running) startTv() else stopTv()
         main.removeCallbacks(pollPlanes)
         if (i == SKY_PAGE && running) main.post(pollPlanes)
+        main.removeCallbacks(pollShips)
+        if (i == PORT_PAGE && running) main.post(pollShips)
+        if (i == RADAR_PAGE && running && System.currentTimeMillis() - radarLoadedAt > RADAR_MS) loadRadar()
     }
 
     // ---- Sky ---------------------------------------------------------------
@@ -489,12 +576,17 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         val nearest = p.getJSONArray("nearest")
         val near = (0 until nearest.length()).map { nearest.getJSONObject(it).getString("hex") }.toSet()
         val center = p.getJSONArray("center")
+        val strikes = p.optJSONObject("lightning")?.optJSONArray("flashes")
+        val flashes = (0 until (strikes?.length() ?: 0)).map { strikes!!.getJSONObject(it) }
+            .map { RadarView.Flash(it.getDouble("lat"), it.getDouble("lon"), it.getInt("age")) }
+        lightningCount = flashes.size
         radar.setData(center.getDouble(0), center.getDouble(1), p.getDouble("rangeNm"),
             (0 until all.length()).map { all.getJSONObject(it) }.filter { !it.getBoolean("ground") }.map {
                 RadarView.Plane(it.getDouble("lat"), it.getDouble("lon"), it.getDouble("track").toFloat(),
                     it.getInt("alt"), it.getString("callsign"), it.getString("hex") in near)
-            })
-        flightsTitle.text = "OVERHEAD NOW  ·  ${all.length()} AIRCRAFT WITHIN 40 NM"
+            }, flashes)
+        flightsTitle.text = "OVERHEAD NOW  ·  ${all.length()} AIRCRAFT" +
+            if (flashes.isNotEmpty()) "  ·  ⚡ ${flashes.size} STRIKES, 15 MIN" else ""
         flightRows.forEachIndexed { i, (call, route, alt) ->
             if (i >= nearest.length()) {
                 call.text = ""; route.text = ""; alt.text = ""
@@ -545,6 +637,103 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         val clock = if (t >= 86400) String.format(Locale.US, "%dd %02d:%02d:%02d", t / 86400, t % 86400 / 3600, t % 3600 / 60, t % 60)
         else String.format(Locale.US, "%02d:%02d:%02d", t / 3600, t % 3600 / 60, t % 60)
         nextLaunchLine.text = "$nextLaunchName  ·  T${if (left >= 0) "−" else "+"}$clock"
+    }
+
+    // ---- Weather radar ----------------------------------------------------
+
+    /** Fetch NWS's looping radar GIF and play it; refreshed at most every 5 minutes. */
+    private fun loadRadar() {
+        radarLoadedAt = System.currentTimeMillis()
+        worker.execute {
+            val drawable = runCatching {
+                val bytes = fetch(RADAR_URL)
+                android.graphics.ImageDecoder.decodeDrawable(
+                    android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes)))
+            }.onFailure { Log.w(TAG, "radar: $it") }.getOrNull() ?: return@execute
+            main.post {
+                radarImage.setImageDrawable(drawable)
+                (drawable as? android.graphics.drawable.AnimatedImageDrawable)?.start()
+            }
+        }
+    }
+
+    private fun showRadarText(w: JSONObject) {
+        val hrs = w.getJSONArray("hours")
+        val wet = (0 until hrs.length()).map { hrs.getJSONObject(it) }.filter { it.getInt("rain") >= 30 }
+        radarNote.text = "${w.getString("summary")}, ${w.getInt("temp")}°" +
+            (if (lightningCount > 0) "\n⚡ $lightningCount lightning strikes within 60 miles" else "") +
+            (if (wet.isEmpty()) "\nNo rain expected in the next 12 hours" else
+                "\nRain likely around ${hour12(wet.first().getString("time"))}")
+        radarHours.text = (0 until hrs.length()).joinToString("\n") {
+            val h = hrs.getJSONObject(it)
+            "${hour12(h.getString("time")).padEnd(6)}   ${h.getInt("rain")}%   ${h.getString("summary")}"
+        }
+    }
+
+    // ---- Port --------------------------------------------------------------
+
+    private val pollShips = object : Runnable {
+        override fun run() {
+            worker.execute {
+                val d = runCatching { JSONObject(String(fetch("$SERVER/api/ships"))) }
+                    .onFailure { Log.w(TAG, "ships: $it") }.getOrNull()
+                main.post { if (d != null) showShips(d) }
+            }
+            if (index == PORT_PAGE && running) main.postDelayed(this, PLANES_MS)
+        }
+    }
+
+    private fun showShips(d: JSONObject) {
+        val list = d.getJSONArray("ships").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
+        if (!d.getBoolean("configured") || list.isEmpty()) {
+            portEmpty.text = if (!d.getBoolean("configured"))
+                "Ships need a free aisstream.io API key.\nOnce it's added on the Latitude, ships in\nthe port and river show up here."
+            else "Listening for ships…\nThey appear as they report their position."
+            shipRows.forEach { (a, b, c) -> a.text = ""; b.text = ""; c.text = "" }
+        } else portEmpty.text = ""
+        // Moving ships first, then the biggest.
+        val sorted = list.sortedWith(compareByDescending<JSONObject> { it.optDouble("speed") >= 1 }
+            .thenByDescending { it.optInt("length") })
+        val top = sorted.take(9).map { it.optLong("mmsi") }.toSet()
+        portMap.setShips(PORT_LAT, PORT_LON, PORT_RANGE, list.map {
+            RadarView.Ship(it.getDouble("lat"), it.getDouble("lon"), it.optDouble("heading").toFloat(),
+                it.optString("type").ifEmpty { null }, it.optString("name").ifEmpty { "Unknown" },
+                it.optDouble("speed") >= 1, it.optLong("mmsi") in top && it.optDouble("speed") >= 1)
+        })
+        portTitle.text = "JAXPORT  ·  ST. JOHNS RIVER  ·  ${list.size} VESSELS"
+        shipRows.forEachIndexed { i, (name, detail, speed) ->
+            if (i >= sorted.size) { name.text = ""; detail.text = ""; speed.text = ""; return@forEachIndexed }
+            val s = sorted[i]
+            name.text = s.optString("name").ifEmpty { "MMSI ${s.optLong("mmsi")}" }
+            detail.text = listOfNotNull(s.optString("type").ifEmpty { null },
+                s.optInt("length").takeIf { it > 0 }?.let { "${it} m" },
+                s.optString("destination").ifEmpty { null }?.let { "→ $it" }).joinToString("  ·  ")
+            val kn = s.optDouble("speed")
+            speed.text = if (kn >= 1) String.format(Locale.US, "%.1f kn", kn) else "moored"
+        }
+    }
+
+    // ---- Tonight -------------------------------------------------------------
+
+    private fun showPlanets(p: JSONObject) {
+        tonightWindow.text = "Dark from ${p.getString("from")} to ${p.getString("to")}"
+        val list = p.getJSONArray("planets")
+        planetCards.forEachIndexed { i, (name, status, best, riseSet) ->
+            if (i >= list.length()) return@forEachIndexed
+            val pl = list.getJSONObject(i)
+            val visible = pl.getBoolean("visible")
+            name.text = pl.getString("name")
+            status.text = if (visible) "Visible tonight" else "Too close to the Sun"
+            status.setTextColor(if (visible) WHITE else MUTED)
+            status.background = GradientDrawable().apply {
+                cornerRadius = 20f
+                setColor(Color.parseColor(if (visible) "#5916A34A" else "#14FFFFFF"))
+            }
+            planetDots[i].alpha = if (visible) 1f else 0.35f
+            best.text = if (visible) "Best ${pl.getString("bestTime")}\n${pl.getInt("altitude")}° up in the ${pl.getString("direction")}" else ""
+            riseSet.text = listOfNotNull(pl.optString("rises").ifEmpty { null }?.let { "Rises $it" },
+                pl.optString("sets").ifEmpty { null }?.let { "Sets $it" }).joinToString("\n")
+        }
     }
 
     // ---- Lichess TV, live -------------------------------------------------
@@ -703,6 +892,12 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         f.optJSONObject("speed")?.let { showSpeed(it) }
         f.optJSONObject("chessHistory")?.let { showRatings(it) }
         f.optJSONObject("launches")?.let { showLaunches(it) }
+        f.optJSONObject("planets")?.let { showPlanets(it) }
+        f.optJSONObject("weather")?.let { showRadarText(it) }
+        val iss = f.optJSONObject("iss")
+        tonightIss.text = iss?.let {
+            "Next visible pass ${it.getString("when")}  ·  ${it.getInt("maxElevation")}° up  ·  ${it.getInt("minutes")} min"
+        } ?: "No visible passes in the next few days"
     }
 
     private fun showVitals(v: JSONObject) {
@@ -1075,6 +1270,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
 
     private fun fetch(url: String): ByteArray {
         val conn = URL(url).openConnection() as HttpURLConnection
+        // NWS (and others) refuse Android's default "Dalvik/..." user agent.
+        conn.setRequestProperty("User-Agent", "Lookout (Rusty's TV)")
         conn.connectTimeout = 5000
         conn.readTimeout = 30000
         try {
@@ -1138,6 +1335,14 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         const val FADE_MS = 450L
         const val LIVE = 5  // index of the Live page
         const val SKY_PAGE = 6
+        const val RADAR_PAGE = 7
+        const val PORT_PAGE = 8
+        const val RADAR_MS = 300_000L
+        const val RADAR_URL = "https://radar.weather.gov/ridge/standard/KJAX_loop.gif"
+        // Port map: centred between downtown and the river mouth.
+        const val PORT_LAT = 30.385
+        const val PORT_LON = -81.50
+        const val PORT_RANGE = 20.0
         const val PLANES_MS = 10_000L
         // Lichess TV channels (API name, label), Classical first as the default.
         val TV_CHANNELS = listOf("classical" to "Classical", "rapid" to "Rapid", "blitz" to "Blitz",

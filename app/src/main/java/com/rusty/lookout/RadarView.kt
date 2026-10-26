@@ -26,10 +26,19 @@ class RadarView(context: Context) : View(context) {
     class Plane(val lat: Double, val lon: Double, val track: Float, val alt: Int,
                 val callsign: String, val highlight: Boolean)
 
+    /** A lightning flash; [age] in seconds, drawn brighter the newer it is. */
+    class Flash(val lat: Double, val lon: Double, val age: Int)
+
+    /** A vessel (Port page): hull shape pointing along [heading], coloured by [kind]. */
+    class Ship(val lat: Double, val lon: Double, val heading: Float, val kind: String?,
+               val name: String, val moving: Boolean, val highlight: Boolean)
+
     private var centerLat = 30.33218
     private var centerLon = -81.65565
     private var rangeNm = 40.0
     private var planes = listOf<Plane>()
+    private var flashes = listOf<Flash>()
+    private var ships = listOf<Ship>()
     private var sweep = 0f
 
     private val disc = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -51,6 +60,9 @@ class RadarView(context: Context) : View(context) {
     private val pill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#CC0C0E14") }
     private val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
     private val placed = mutableListOf<RectF>()
+    private val bolt = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FDE047"); strokeWidth = 3f; strokeCap = Paint.Cap.ROUND
+    }
     private val arrow = Path()
 
     private val spinner = ValueAnimator.ofFloat(0f, 360f).apply {
@@ -80,11 +92,21 @@ class RadarView(context: Context) : View(context) {
         }
     }
 
-    fun setData(lat: Double, lon: Double, range: Double, list: List<Plane>) {
+    fun setData(lat: Double, lon: Double, range: Double, list: List<Plane>, lightning: List<Flash> = emptyList()) {
         centerLat = lat
         centerLon = lon
         rangeNm = range
         planes = list
+        flashes = lightning
+        invalidate()
+    }
+
+    fun setShips(lat: Double, lon: Double, range: Double, list: List<Ship>) {
+        centerLat = lat
+        centerLon = lon
+        rangeNm = range
+        ships = list
+        planes = emptyList()
         invalidate()
     }
 
@@ -109,7 +131,7 @@ class RadarView(context: Context) : View(context) {
         c.drawLine(cx - r, cy, cx + r, cy, axis)
         c.drawLine(cx, cy - r, cx, cy + r, axis)
         placed.clear()
-        for (nm in listOf(10.0, 20.0, 40.0)) {
+        for (nm in listOf(rangeNm / 4, rangeNm / 2, rangeNm)) {
             val rr = (r * nm / rangeNm).toFloat()
             c.drawCircle(cx, cy, rr, ring)
             // Ring labels sit on the lower-right diagonal, away from "N"; plane labels avoid them.
@@ -123,6 +145,50 @@ class RadarView(context: Context) : View(context) {
 
         val nmPerDegLat = 60.0
         val nmPerDegLon = 60.0 * cos(Math.toRadians(centerLat))
+        fun xy(lat: Double, lon: Double): Pair<Float, Float> =
+            cx + (r * (lon - centerLon) * nmPerDegLon / rangeNm).toFloat() to
+                cy - (r * (lat - centerLat) * nmPerDegLat / rangeNm).toFloat()
+        fun inside(x: Float, y: Float) = (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r
+
+        // Lightning: a bright star burst that fades over its 15 minutes.
+        for (f in flashes) {
+            val (x, y) = xy(f.lat, f.lon)
+            if (!inside(x, y)) continue
+            val fresh = (1f - f.age / 900f).coerceIn(0.15f, 1f)
+            bolt.alpha = (255 * fresh).toInt()
+            val s = 6f + 8f * fresh
+            c.drawLine(x - s, y, x + s, y, bolt)
+            c.drawLine(x, y - s, x, y + s, bolt)
+            c.drawLine(x - s * 0.7f, y - s * 0.7f, x + s * 0.7f, y + s * 0.7f, bolt)
+            c.drawLine(x - s * 0.7f, y + s * 0.7f, x + s * 0.7f, y - s * 0.7f, bolt)
+            if (f.age < 60) {
+                halo.color = Color.parseColor("#FDE047")
+                halo.alpha = 160
+                c.drawCircle(x, y, 20f, halo)
+            }
+        }
+
+        // Ships: rounded hulls, moving ones bright, moored ones dimmed.
+        for (sh in ships.sortedBy { it.highlight }) {
+            val (x, y) = xy(sh.lat, sh.lon)
+            if (!inside(x, y)) continue
+            val color = shipColor(sh.kind)
+            plane.color = color
+            plane.alpha = if (sh.moving || sh.highlight) 255 else 130
+            c.save()
+            c.rotate(sh.heading, x, y)
+            arrow.reset()
+            val s = if (sh.highlight) 13f else 9f
+            arrow.moveTo(x, y - s * 1.6f)
+            arrow.quadTo(x + s, y - s * 0.4f, x + s * 0.8f, y + s * 1.2f)
+            arrow.lineTo(x - s * 0.8f, y + s * 1.2f)
+            arrow.quadTo(x - s, y - s * 0.4f, x, y - s * 1.6f)
+            arrow.close()
+            c.drawPath(arrow, plane)
+            c.restore()
+            if (sh.highlight) label(c, sh.name, x, y, color)
+        }
+
         // Background traffic first, small and dimmed; the labelled nearest flights on top.
         for (p in planes.sortedBy { it.highlight }) {
             val dx = (p.lon - centerLon) * nmPerDegLon
@@ -171,6 +237,16 @@ class RadarView(context: Context) : View(context) {
             return
         }
     }
+
+    private fun shipColor(kind: String?) = Color.parseColor(when (kind) {
+        "Cargo" -> "#7DD3FC"
+        "Tanker" -> "#FCA5A5"
+        "Passenger" -> "#C98BDB"
+        "Tug", "Towing", "Pilot boat" -> "#FDBA74"
+        "Military", "Law enforcement" -> "#A1A1AA"
+        "Sailboat", "Pleasure craft" -> "#86EFAC"
+        else -> "#E4E4E7"
+    })
 
     private fun altitudeColor(ft: Int) = Color.parseColor(when {
         ft < 5000 -> "#FDBA74"
