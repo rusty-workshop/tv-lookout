@@ -11,8 +11,8 @@ android {
         // Family Room TV is a Sony BRAVIA on Android TV 12 (API 31).
         minSdk = 31
         targetSdk = 34
-        versionCode = 12
-        versionName = "2.10"
+        versionCode = 13
+        versionName = "2.11"
     }
 
     buildTypes {

@@ -132,7 +132,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private val radarImage = ImageView(context)
     private lateinit var radarNote: TextView
     private lateinit var radarHours: TextView
-    private var radarLoadedAt = 0L
+    @Volatile private var radarModified: String? = null  // NWS Last-Modified of what's on screen
+    private lateinit var radarUpdated: TextView
     private lateinit var tonightWindow: TextView
     private val planetCards = mutableListOf<List<TextView>>()  // name, status, best, rise/set
     private val planetDots = mutableListOf<View>()
@@ -389,6 +390,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         val rcard3 = card(radarPage, 990, 226, 834, 780)
         eyebrow(rcard3, 44, 40, "WEATHER RADAR  ·  JACKSONVILLE")
         radarNote = text(rcard3, 44, 90, 34, WHITE, LIGHT, width = 746).apply { setLineSpacing(8f, 1f) }
+        radarUpdated = text(rcard3, 44, 640, 24, ACCENT_LIGHT, MEDIUM, width = 746)
         text(rcard3, 44, 300, 20, MUTED, MEDIUM).apply { text = "RAIN CHANCE, NEXT 12 HOURS"; letterSpacing = 0.12f }
         radarHours = text(rcard3, 44, 340, 30, SOFT, LIGHT, width = 746).apply { setLineSpacing(14f, 1f) }
         text(rcard3, 44, 690, 22, MUTED, REGULAR, width = 746).apply {
@@ -451,7 +453,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         main.postDelayed(rotate, ROTATE_MS)
         if (index == LIVE) startTv()
         if (index == SKY_PAGE) main.post(pollPlanes)
-        if (index == RADAR_PAGE) loadRadar()
+        if (index == RADAR_PAGE) main.post(pollRadar)
     }
 
     fun stop() {
@@ -532,7 +534,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         if (i == LIVE && running) startTv() else stopTv()
         main.removeCallbacks(pollPlanes)
         if (i == SKY_PAGE && running) main.post(pollPlanes)
-        if (i == RADAR_PAGE && running && System.currentTimeMillis() - radarLoadedAt > RADAR_MS) loadRadar()
+        main.removeCallbacks(pollRadar)
+        if (i == RADAR_PAGE && running) main.post(pollRadar)
     }
 
     // ---- Sky ---------------------------------------------------------------
@@ -619,21 +622,56 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
 
     // ---- Weather radar ----------------------------------------------------
 
-    /** Fetch NWS's looping radar GIF and play it; refreshed at most every 5 minutes. */
-    private fun loadRadar() {
-        radarLoadedAt = System.currentTimeMillis()
-        worker.execute {
-            val drawable = runCatching {
-                val bytes = fetch(RADAR_URL)
-                android.graphics.ImageDecoder.decodeDrawable(
-                    android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes)))
-            }.onFailure { Log.w(TAG, "radar: $it") }.getOrNull() ?: return@execute
-            main.post {
-                radarImage.setImageDrawable(drawable)
-                (drawable as? android.graphics.drawable.AnimatedImageDrawable)?.start()
-            }
+    /**
+     * While the Radar page is up, ask NWS every 30 seconds whether the loop has
+     * changed. It answers "not modified" with no body when nothing's new, so
+     * the GIF is only downloaded when a new radar scan has been published
+     * (every few minutes), and it shows within half a minute of NWS posting it.
+     */
+    private val pollRadar = object : Runnable {
+        override fun run() {
+            worker.execute { refreshRadar() }
+            if (index == RADAR_PAGE && running) main.postDelayed(this, RADAR_POLL_MS)
         }
     }
+
+    private fun refreshRadar() {
+        val conn = URL(RADAR_URL).openConnection() as HttpURLConnection
+        try {
+            conn.setRequestProperty("User-Agent", "Lookout (Rusty's TV)")
+            radarModified?.let { conn.setRequestProperty("If-Modified-Since", it) }
+            conn.useCaches = false
+            conn.connectTimeout = 5000
+            conn.readTimeout = 30000
+            when (conn.responseCode) {
+                304 -> return
+                200 -> {
+                    val bytes = conn.inputStream.use { it.readBytes() }
+                    val modified = conn.getHeaderField("Last-Modified")
+                    val drawable = android.graphics.ImageDecoder.decodeDrawable(
+                        android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes)))
+                    radarModified = modified
+                    main.post {
+                        radarImage.setImageDrawable(drawable)
+                        (drawable as? android.graphics.drawable.AnimatedImageDrawable)?.start()
+                        radarUpdated.text = "Radar updated " + (modified?.let { httpTime(it) } ?: "just now") +
+                            "  ·  checking every 30 s"
+                    }
+                }
+                else -> Log.w(TAG, "radar: HTTP ${conn.responseCode}")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "radar: $e")
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** "Mon, 26 Oct 2026 18:55:12 GMT" -> "2:55 PM" local. */
+    private fun httpTime(h: String) = runCatching {
+        val t = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US).parse(h)!!
+        SimpleDateFormat("h:mm a", Locale.US).format(t)
+    }.getOrDefault("just now")
 
     private fun showRadarText(w: JSONObject) {
         val hrs = w.getJSONArray("hours")
@@ -1271,7 +1309,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         const val LIVE = 5  // index of the Live page
         const val SKY_PAGE = 6
         const val RADAR_PAGE = 7
-        const val RADAR_MS = 300_000L
+        const val RADAR_POLL_MS = 30_000L
         const val RADAR_URL = "https://radar.weather.gov/ridge/standard/KJAX_loop.gif"
         const val PLANES_MS = 10_000L
         // Lichess TV channels (API name, label), Classical first as the default.
