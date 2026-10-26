@@ -369,22 +369,13 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             )
         }
 
-        // ---- sky: planes overhead + rocket launches ----
+        // ---- sky: planes overhead ----
         val sky = page()
         place(sky, radar, 96, 226, 780, 780)
-        val lc = card(sky, 920, 226, 904, 380)
-        eyebrow(lc, 44, 34, "NEXT LAUNCH FROM FLORIDA")
-        launchMission = text(lc, 44, 80, 40, WHITE, REGULAR, width = 816).apply { maxLines = 1 }
-        launchRocket = text(lc, 44, 136, 28, SOFT, LIGHT, width = 816).apply { maxLines = 1 }
-        launchWhen = text(lc, 44, 180, 30, ACCENT_LIGHT, MEDIUM, width = 816).apply { maxLines = 1 }
-        launchLater = text(lc, 44, 226, 24, MUTED, REGULAR, width = 816).apply { maxLines = 1 }
-        card(lc, 44, 276, 816, 2, radius = 1f, fill = "#1FFFFFFF", stroke = null)
-        text(lc, 44, 296, 20, MUTED, MEDIUM).apply { text = "NEXT ANYWHERE"; letterSpacing = 0.12f }
-        nextLaunchLine = text(lc, 44, 328, 28, SOFT, LIGHT, width = 816).apply { maxLines = 1 }
-        val fc = card(sky, 920, 626, 904, 380)
-        flightsTitle = eyebrow(fc, 44, 34, "OVERHEAD NOW")
-        for (i in 0 until 5) {
-            val y = 80 + i * 56
+        val fc = card(sky, 920, 226, 904, 780)
+        flightsTitle = eyebrow(fc, 44, 40, "OVERHEAD NOW")
+        for (i in 0 until 10) {
+            val y = 100 + i * 66
             flightRows += Triple(
                 text(fc, 44, y, 30, WHITE, MEDIUM, width = 180).apply { maxLines = 1 },
                 text(fc, 230, y + 2, 26, SOFT, LIGHT, width = 430).apply { maxLines = 1 },
@@ -450,19 +441,29 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
                     outline.setRoundRect(0, 0, view.width, view.height, 24f)
             }
         }
-        val spc = card(space, 920, 226, 904, 780)
-        eyebrow(spc, 44, 40, "VIEW FROM SPACE  ·  GOES-19")
-        text(spc, 44, 96, 34, WHITE, LIGHT, width = 816).apply {
+        val spc = card(space, 920, 226, 904, 380)
+        eyebrow(spc, 44, 36, "VIEW FROM SPACE  ·  GOES-19")
+        text(spc, 44, 84, 32, WHITE, LIGHT, width = 816).apply {
             text = "The Southeast from 22,000 miles up, looping over the last few hours."
+            setLineSpacing(6f, 1f)
+        }
+        text(spc, 44, 180, 26, SOFT, LIGHT, width = 816).apply {
+            text = "Daytime is true colour. At night it switches to infrared: clouds glow by temperature, " +
+                "and city lights show on the ground."
             setLineSpacing(8f, 1f)
         }
-        text(spc, 44, 230, 28, SOFT, LIGHT, width = 816).apply {
-            text = "Daytime is true colour. At night it switches to infrared: clouds glow by temperature, " +
-                "and city lights show on the ground. Florida is the peninsula at the bottom right; " +
-                "Jacksonville sits at its top right corner."
-            setLineSpacing(10f, 1f)
-        }
-        spaceUpdated = text(spc, 44, 700, 24, ACCENT_LIGHT, MEDIUM, width = 816)
+        spaceUpdated = text(spc, 44, 316, 24, ACCENT_LIGHT, MEDIUM, width = 816)
+
+        // Rocket launches, moved here from the Sky page.
+        val lc = card(space, 920, 626, 904, 380)
+        eyebrow(lc, 44, 34, "NEXT LAUNCH FROM FLORIDA")
+        launchMission = text(lc, 44, 80, 40, WHITE, REGULAR, width = 816).apply { maxLines = 1 }
+        launchRocket = text(lc, 44, 136, 28, SOFT, LIGHT, width = 816).apply { maxLines = 1 }
+        launchWhen = text(lc, 44, 180, 30, ACCENT_LIGHT, MEDIUM, width = 816).apply { maxLines = 1 }
+        launchLater = text(lc, 44, 226, 24, MUTED, REGULAR, width = 816).apply { maxLines = 1 }
+        card(lc, 44, 276, 816, 2, radius = 1f, fill = "#1FFFFFFF", stroke = null)
+        text(lc, 44, 296, 20, MUTED, MEDIUM).apply { text = "NEXT ANYWHERE"; letterSpacing = 0.12f }
+        nextLaunchLine = text(lc, 44, 328, 28, SOFT, LIGHT, width = 816).apply { maxLines = 1 }
 
         // ---- tonight: planets ----
         val tonight = page()
@@ -689,7 +690,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         showAirport(p.optJSONArray("airport"))
         val all = p.getJSONArray("aircraft")
         val nearest = p.getJSONArray("nearest")
-        val near = (0 until nearest.length()).map { nearest.getJSONObject(it).getString("hex") }.toSet()
+        // Only the five nearest get labels on the radar; the list shows up to ten.
+        val near = (0 until minOf(nearest.length(), 5)).map { nearest.getJSONObject(it).getString("hex") }.toSet()
         val center = p.getJSONArray("center")
         val strikes = p.optJSONObject("lightning")?.optJSONArray("flashes")
         val flashes = (0 until (strikes?.length() ?: 0)).map { strikes!!.getJSONObject(it) }
