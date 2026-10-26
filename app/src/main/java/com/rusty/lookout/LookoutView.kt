@@ -132,7 +132,14 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private val radarImage = ImageView(context)
     private lateinit var radarNote: TextView
     private lateinit var radarHours: TextView
-    @Volatile private var radarModified: String? = null  // NWS Last-Modified of what's on screen
+    private val spaceImage = ImageView(context)
+    private lateinit var spaceUpdated: TextView
+    private lateinit var airportRows: List<List<TextView>>
+    private lateinit var airportEmpty: TextView
+    private lateinit var daylightLen: TextView
+    private lateinit var daylightChange: TextView
+    private lateinit var daylightTimes: TextView
+    private val daylightChart = LineChart(context)
     private lateinit var radarUpdated: TextView
     private lateinit var tonightWindow: TextView
     private val planetCards = mutableListOf<List<TextView>>()  // name, status, best, rise/set
@@ -181,9 +188,9 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         }, 1000, -500, 1400, 1400)
 
         // ---- header: tabs on the left, time on the right ----
-        listOf("Weather", "Today", "Homelab", "Server", "Chess", "Live", "Sky", "Radar", "Tonight")
+        listOf("Weather", "Today", "Homelab", "Server", "Chess", "Live", "Sky", "Airport", "Radar", "Space", "Tonight")
             .forEachIndexed { i, name ->
-            tabs += text(canvas, 96 + i * 158, 52, 25, MUTED, MEDIUM, width = 150, height = 60).apply {
+            tabs += text(canvas, 92 + i * 146, 52, 23, MUTED, MEDIUM, width = 140, height = 60).apply {
                 this.text = name
                 gravity = Gravity.CENTER
             }
@@ -242,15 +249,21 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
 
         // ---- today ----
         val today = page()
-        val ocard = card(today, 96, 226, 1100, 794)
+        val ocard = card(today, 96, 226, 1100, 470)
         eyebrow(ocard, 44, 40, "ON THIS DAY")
-        otdImage = image(ocard, 44, 96, 380, radius = 24f).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-        otdYear = text(ocard, 470, 84, 110, WHITE, THIN)
-        otdAgo = text(ocard, 478, 214, 30, ACCENT_LIGHT, MEDIUM)
-        otdText = text(ocard, 478, 280, 36, SOFT, LIGHT, width = 580).apply {
+        otdImage = image(ocard, 44, 92, 334, radius = 24f).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        otdYear = text(ocard, 420, 76, 96, WHITE, THIN)
+        otdAgo = text(ocard, 428, 190, 28, ACCENT_LIGHT, MEDIUM)
+        otdText = text(ocard, 428, 240, 32, SOFT, LIGHT, width = 630).apply {
             setLineSpacing(10f, 1f)
-            maxLines = 10
+            maxLines = 5
         }
+        val dcard = card(today, 96, 716, 1100, 304)
+        eyebrow(dcard, 44, 32, "DAYLIGHT")
+        daylightLen = text(dcard, 40, 66, 72, WHITE, THIN)
+        daylightChange = text(dcard, 44, 162, 26, ACCENT_LIGHT, MEDIUM, width = 480)
+        daylightTimes = text(dcard, 44, 206, 22, MUTED, REGULAR, width = 480).apply { setLineSpacing(6f, 1f) }
+        place(dcard, daylightChart, 540, 30, 530, 250)
         val ccard = card(today, 1236, 226, 588, 794)
         eyebrow(ccard, 40, 40, "COUNTDOWNS")
         place(ccard, countdownList, 40, 96, 508, 680)
@@ -375,6 +388,29 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             )
         }
 
+        // ---- airport: JAX arrivals and departures ----
+        val airport = page()
+        val ac = card(airport, 96, 226, 1728, 794)
+        eyebrow(ac, 44, 40, "JACKSONVILLE INTERNATIONAL  ·  LIVE")
+        text(ac, 44, 84, 26, MUTED, LIGHT, width = 1600).text =
+            "Worked out from live plane positions: low and descending toward JAX, or climbing away"
+        val cols = listOf(44 to "STATUS", 280 to "FLIGHT", 500 to "FROM → TO", 1180 to "ALTITUDE", 1420 to "WHEN")
+        for ((x, h) in cols) text(ac, x, 150, 20, MUTED, MEDIUM).apply { text = h; letterSpacing = 0.12f }
+        airportRows = (0 until 7).map { i ->
+            val y = 196 + i * 82
+            listOf(
+                text(ac, 44, y, 24, WHITE, MEDIUM, height = 46).apply { gravity = Gravity.CENTER; setPadding(20, 0, 20, 0) },
+                text(ac, 280, y + 4, 34, WHITE, MEDIUM, width = 210).apply { maxLines = 1 },
+                text(ac, 500, y + 6, 30, SOFT, LIGHT, width = 660).apply { maxLines = 1 },
+                text(ac, 1180, y + 6, 30, SOFT, LIGHT, width = 220).apply { maxLines = 1 },
+                text(ac, 1420, y + 6, 30, WHITE, LIGHT, width = 270).apply { maxLines = 1 },
+            )
+        }
+        airportEmpty = text(ac, 0, 360, 40, MUTED, LIGHT, width = 1728).apply {
+            gravity = Gravity.CENTER
+            text = "Nothing landing or taking off at JAX right now"
+        }
+
         // ---- weather radar (NWS KJAX loop) ----
         val radarPage = page()
         val rframe = card(radarPage, 96, 226, 852, 780, radius = 24f, fill = "#FF0C0E14")
@@ -397,6 +433,32 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             text = "National Weather Service radar, last ~hour, looping.\nGreen = light rain · yellow/red = heavy storms"
             setLineSpacing(6f, 1f)
         }
+
+        // ---- space: GOES-19 satellite loop ----
+        val space = page()
+        val sframe = card(space, 96, 226, 780, 780, radius = 24f, fill = "#FF0C0E14")
+        place(sframe, spaceImage, 0, 0, 780, 780)
+        spaceImage.apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            clipToOutline = true
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) =
+                    outline.setRoundRect(0, 0, view.width, view.height, 24f)
+            }
+        }
+        val spc = card(space, 920, 226, 904, 780)
+        eyebrow(spc, 44, 40, "VIEW FROM SPACE  ·  GOES-19")
+        text(spc, 44, 96, 34, WHITE, LIGHT, width = 816).apply {
+            text = "The Southeast from 22,000 miles up, looping over the last few hours."
+            setLineSpacing(8f, 1f)
+        }
+        text(spc, 44, 230, 28, SOFT, LIGHT, width = 816).apply {
+            text = "Daytime is true colour. At night it switches to infrared: clouds glow by temperature, " +
+                "and city lights show on the ground. Florida is the peninsula at the bottom right; " +
+                "Jacksonville sits at its top right corner."
+            setLineSpacing(10f, 1f)
+        }
+        spaceUpdated = text(spc, 44, 700, 24, ACCENT_LIGHT, MEDIUM, width = 816)
 
         // ---- tonight: planets ----
         val tonight = page()
@@ -452,8 +514,9 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         refresh()
         main.postDelayed(rotate, ROTATE_MS)
         if (index == LIVE) startTv()
-        if (index == SKY_PAGE) main.post(pollPlanes)
+        if (index == SKY_PAGE || index == AIRPORT_PAGE) main.post(pollPlanes)
         if (index == RADAR_PAGE) main.post(pollRadar)
+        if (index == SPACE_PAGE) main.post(pollSpace)
     }
 
     fun stop() {
@@ -533,9 +596,11 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         if (pinned) prefs.edit().putInt("page", i).apply()
         if (i == LIVE && running) startTv() else stopTv()
         main.removeCallbacks(pollPlanes)
-        if (i == SKY_PAGE && running) main.post(pollPlanes)
+        if ((i == SKY_PAGE || i == AIRPORT_PAGE) && running) main.post(pollPlanes)
         main.removeCallbacks(pollRadar)
         if (i == RADAR_PAGE && running) main.post(pollRadar)
+        main.removeCallbacks(pollSpace)
+        if (i == SPACE_PAGE && running) main.post(pollSpace)
     }
 
     // ---- Sky ---------------------------------------------------------------
@@ -548,11 +613,43 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
                     .onFailure { Log.w(TAG, "planes: $it") }.getOrNull()
                 main.post { if (p != null) showPlanes(p) }
             }
-            if (index == SKY_PAGE && running) main.postDelayed(this, PLANES_MS)
+            if ((index == SKY_PAGE || index == AIRPORT_PAGE) && running) main.postDelayed(this, PLANES_MS)
+        }
+    }
+
+    private fun showAirport(rows: JSONArray?) {
+        val n = rows?.length() ?: 0
+        airportEmpty.visibility = if (n == 0) VISIBLE else GONE
+        airportRows.forEachIndexed { i, (status, flight, route, alt, whenText) ->
+            if (i >= n) {
+                listOf(status, flight, route, alt, whenText).forEach { it.text = ""; it.background = null }
+                return@forEachIndexed
+            }
+            val r = rows!!.getJSONObject(i)
+            val st = r.getString("status")
+            status.text = st
+            status.background = GradientDrawable().apply {
+                cornerRadius = 23f
+                setColor(Color.parseColor(when (st) { "Landing" -> "#7316A34A"; "Departing" -> "#730369A1"; else -> "#26FFFFFF" }))
+            }
+            flight.text = r.getString("callsign")
+            val ro = r.optJSONObject("route")
+            route.text = when {
+                ro != null && !ro.isNull("fromCity") && !ro.isNull("toCity") -> "${ro.getString("fromCity")} → ${ro.getString("toCity")}"
+                ro != null && !ro.isNull("airline") -> ro.getString("airline")
+                else -> listOfNotNull(r.optString("type").ifEmpty { null }, "private / unlisted").joinToString("  ·  ")
+            }
+            alt.text = if (st == "On ground") "—" else String.format(Locale.US, "%,d ft", r.getInt("alt"))
+            whenText.text = when (st) {
+                "Landing" -> r.optInt("eta").let { if (it <= 1) "Landing now" else "in ~$it min" }
+                "Departing" -> "${r.getDouble("jaxNm")} nm out"
+                else -> "at the gate / taxiing"
+            }
         }
     }
 
     private fun showPlanes(p: JSONObject) {
+        showAirport(p.optJSONArray("airport"))
         val all = p.getJSONArray("aircraft")
         val nearest = p.getJSONArray("nearest")
         val near = (0 until nearest.length()).map { nearest.getJSONObject(it).getString("hex") }.toSet()
@@ -623,49 +720,55 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     // ---- Weather radar ----------------------------------------------------
 
     /**
-     * While the Radar page is up, ask NWS every 30 seconds whether the loop has
-     * changed. It answers "not modified" with no body when nothing's new, so
-     * the GIF is only downloaded when a new radar scan has been published
-     * (every few minutes), and it shows within half a minute of NWS posting it.
+     * A looping GIF (NWS radar, GOES satellite) that's re-checked while its page
+     * is up. Each check sends If-Modified-Since, which costs nothing when the
+     * image hasn't changed, so a new frame shows within one period of being
+     * published and the GIF is only downloaded when it actually changed.
      */
-    private val pollRadar = object : Runnable {
+    private inner class GifLoop(val url: String, val view: ImageView, val label: () -> TextView,
+                                val page: Int, val periodMs: Long, val what: String) : Runnable {
+        @Volatile private var modified: String? = null
+
         override fun run() {
-            worker.execute { refreshRadar() }
-            if (index == RADAR_PAGE && running) main.postDelayed(this, RADAR_POLL_MS)
+            worker.execute { refresh() }
+            if (index == page && running) main.postDelayed(this, periodMs)
+        }
+
+        private fun refresh() {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            try {
+                conn.setRequestProperty("User-Agent", "Lookout (Rusty's TV)")
+                modified?.let { conn.setRequestProperty("If-Modified-Since", it) }
+                conn.useCaches = false
+                conn.connectTimeout = 5000
+                conn.readTimeout = 60000
+                when (conn.responseCode) {
+                    304 -> return
+                    200 -> {
+                        val bytes = conn.inputStream.use { it.readBytes() }
+                        val stamp = conn.getHeaderField("Last-Modified")
+                        val drawable = android.graphics.ImageDecoder.decodeDrawable(
+                            android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes)))
+                        modified = stamp
+                        main.post {
+                            view.setImageDrawable(drawable)
+                            (drawable as? android.graphics.drawable.AnimatedImageDrawable)?.start()
+                            label().text = "$what updated " + (stamp?.let { httpTime(it) } ?: "just now") +
+                                "  ·  checking every ${periodMs / 1000} s"
+                        }
+                    }
+                    else -> Log.w(TAG, "$what: HTTP ${conn.responseCode}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "$what: $e")
+            } finally {
+                conn.disconnect()
+            }
         }
     }
 
-    private fun refreshRadar() {
-        val conn = URL(RADAR_URL).openConnection() as HttpURLConnection
-        try {
-            conn.setRequestProperty("User-Agent", "Lookout (Rusty's TV)")
-            radarModified?.let { conn.setRequestProperty("If-Modified-Since", it) }
-            conn.useCaches = false
-            conn.connectTimeout = 5000
-            conn.readTimeout = 30000
-            when (conn.responseCode) {
-                304 -> return
-                200 -> {
-                    val bytes = conn.inputStream.use { it.readBytes() }
-                    val modified = conn.getHeaderField("Last-Modified")
-                    val drawable = android.graphics.ImageDecoder.decodeDrawable(
-                        android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes)))
-                    radarModified = modified
-                    main.post {
-                        radarImage.setImageDrawable(drawable)
-                        (drawable as? android.graphics.drawable.AnimatedImageDrawable)?.start()
-                        radarUpdated.text = "Radar updated " + (modified?.let { httpTime(it) } ?: "just now") +
-                            "  ·  checking every 30 s"
-                    }
-                }
-                else -> Log.w(TAG, "radar: HTTP ${conn.responseCode}")
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "radar: $e")
-        } finally {
-            conn.disconnect()
-        }
-    }
+    private val pollRadar = GifLoop(RADAR_URL, radarImage, { radarUpdated }, RADAR_PAGE, 30_000L, "Radar")
+    private val pollSpace = GifLoop(SPACE_URL, spaceImage, { spaceUpdated }, SPACE_PAGE, 60_000L, "Satellite")
 
     /** "Mon, 26 Oct 2026 18:55:12 GMT" -> "2:55 PM" local. */
     private fun httpTime(h: String) = runCatching {
@@ -684,6 +787,29 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             val h = hrs.getJSONObject(it)
             "${hour12(h.getString("time")).padEnd(6)}   ${h.getInt("rain")}%   ${h.getString("summary")}"
         }
+    }
+
+    // ---- Daylight -------------------------------------------------------------
+
+    private fun showDaylight(d: JSONObject) {
+        val mins = d.getDouble("lengthMin").roundToInt()
+        daylightLen.text = withNote("${mins / 60}h ${String.format(Locale.US, "%02d", mins % 60)}m", "of daylight")
+        val ch = d.getInt("changeSec")
+        val a = kotlin.math.abs(ch)
+        daylightChange.text = (if (a >= 60) "${a / 60} min ${a % 60} s" else "$a s") +
+            (if (ch < 0) " shorter" else " longer") + " than yesterday"
+        val gm = d.getJSONArray("goldenMorning")
+        val ge = d.getJSONArray("goldenEvening")
+        val be = d.getJSONArray("blueEvening")
+        daylightTimes.text = "Sunrise ${d.getString("sunrise")}  ·  Sunset ${d.getString("sunset")}\n" +
+            "Golden hour ${ge.optString(0)}–${ge.optString(1)}  ·  blue ${be.optString(0)}–${be.optString(1)}\n" +
+            "Morning gold ${gm.optString(0)}–${gm.optString(1)}"
+        val year = d.getJSONArray("year").let { y -> (0 until y.length()).map { (y.getDouble(it) / 60).toFloat() } }
+        val today = d.getInt("todayIndex")
+        daylightChart.setData(listOf(
+            LineChart.Series(year, Color.parseColor("#33FFFFFF")),
+            LineChart.Series(year.take(today + 1), Color.parseColor("#FCD34D")),
+        ), unit = "h", sharedX = year.size)
     }
 
     // ---- Tonight -------------------------------------------------------------
@@ -866,6 +992,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         f.optJSONObject("chessHistory")?.let { showRatings(it) }
         f.optJSONObject("launches")?.let { showLaunches(it) }
         f.optJSONObject("planets")?.let { showPlanets(it) }
+        f.optJSONObject("daylight")?.let { showDaylight(it) }
         f.optJSONObject("weather")?.let { showRadarText(it) }
         val iss = f.optJSONObject("iss")
         tonightIss.text = iss?.let {
@@ -1308,8 +1435,10 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         const val FADE_MS = 450L
         const val LIVE = 5  // index of the Live page
         const val SKY_PAGE = 6
-        const val RADAR_PAGE = 7
-        const val RADAR_POLL_MS = 30_000L
+        const val AIRPORT_PAGE = 7
+        const val RADAR_PAGE = 8
+        const val SPACE_PAGE = 9
+        const val SPACE_URL = "https://cdn.star.nesdis.noaa.gov/GOES19/ABI/SECTOR/se/GEOCOLOR/GOES19-SE-GEOCOLOR-600x600.gif"
         const val RADAR_URL = "https://radar.weather.gov/ridge/standard/KJAX_loop.gif"
         const val PLANES_MS = 10_000L
         // Lichess TV channels (API name, label), Classical first as the default.

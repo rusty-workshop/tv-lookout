@@ -22,6 +22,7 @@ class LineChart(context: Context) : View(context) {
 
     private var series = listOf<Series>()
     private var unit = ""
+    private var xCount = 0  // >0: all series share one x axis of this many points
 
     private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -37,9 +38,10 @@ class LineChart(context: Context) : View(context) {
         typeface = Typeface.create("sans-serif", Typeface.NORMAL)
     }
 
-    fun setData(data: List<Series>, unit: String = "") {
+    fun setData(data: List<Series>, unit: String = "", sharedX: Int = 0) {
         series = data.filter { it.points.isNotEmpty() }
         this.unit = unit
+        xCount = sharedX
         invalidate()
     }
 
@@ -69,7 +71,8 @@ class LineChart(context: Context) : View(context) {
             dot.color = s.color
             val path = Path()
             s.points.forEachIndexed { i, p ->
-                val x = if (s.points.size == 1) left + w else left + w * i / (s.points.size - 1)
+                val n = if (xCount > 0) xCount else s.points.size
+                val x = if (n == 1) left + w else left + w * i / (n - 1)
                 val y = top + h - h * (p - lo) / (hi - lo)
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 if (i == s.points.lastIndex) c.drawCircle(x, y, 9f, dot)
