@@ -5,7 +5,10 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
 
-/** Lookout as an app: left/right flips pages and pauses rotation for 5 minutes. */
+/**
+ * Lookout as an app: left/right flips pages and pauses rotation for 5 minutes;
+ * OK pins the current page (remembered across restarts) until pressed again.
+ */
 class MainActivity : Activity() {
 
     private lateinit var view: LookoutView
@@ -36,6 +39,7 @@ class MainActivity : Activity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean = when (keyCode) {
         KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { view.step(1); true }
         KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> { view.step(-1); true }
+        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { view.togglePin(); true }
         else -> super.onKeyDown(keyCode, event)
     }
 }

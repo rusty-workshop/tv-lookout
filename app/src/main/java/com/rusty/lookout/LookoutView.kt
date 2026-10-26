@@ -103,6 +103,24 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private val puzzleBoard: ImageView
     private val puzzleText: TextView
 
+    // server page
+    private val vitalTiles = mutableListOf<Triple<TextView, TextView, TextView>>()  // label, value, note
+    private val speedDown: TextView
+    private val speedUp: TextView
+    private val speedPing: TextView
+    private val speedAt: TextView
+    private val speedChart = LineChart(context)
+
+    // chess rating card
+    private val ratingChart = LineChart(context)
+    private val ratingLegend: TextView
+    private val resultsRow = FrameLayout(context)
+
+    // pinning: OK on the remote keeps the current page up
+    private val prefs = context.getSharedPreferences("lookout", Context.MODE_PRIVATE)
+    private var pinned = false
+    private val pinChip: TextView
+
     // live page
     private val tvBoard: ImageView
     private val tvPlayers = mutableListOf<Triple<TextView, TextView, TextView>>()  // name, rating, clock
@@ -124,13 +142,24 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         }, 1000, -500, 1400, 1400)
 
         // ---- header: tabs on the left, time on the right ----
-        listOf("Weather", "Today", "Homelab", "Chess", "Live").forEachIndexed { i, name ->
+        listOf("Weather", "Today", "Homelab", "Server", "Chess", "Live").forEachIndexed { i, name ->
             tabs += text(canvas, 96 + i * 230, 52, 30, MUTED, MEDIUM, width = 210, height = 60).apply {
                 this.text = name
                 gravity = Gravity.CENTER
             }
         }
         headerTime = text(canvas, 1500, 50, 46, WHITE, LIGHT, width = 324).apply { gravity = Gravity.END }
+        pinChip = text(canvas, 1490, 56, 24, ACCENT_LIGHT, MEDIUM, height = 50).apply {
+            text = "📌  Pinned"
+            gravity = Gravity.CENTER
+            setPadding(22, 0, 22, 0)
+            background = GradientDrawable().apply {
+                cornerRadius = 25f
+                setColor(Color.parseColor("#26AA5CC3"))
+                setStroke(2, Color.parseColor("#80AA5CC3"))
+            }
+            visibility = GONE
+        }
 
         alertCard = card(canvas, 96, 132, 1728, 64, radius = 32f, fill = "#33B91C1C", stroke = "#99EF4444")
         alertText = text(alertCard, 32, 0, 30, WHITE, MEDIUM, width = 1664, height = 64).apply {
@@ -215,28 +244,56 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         ripperPct = text(rcard, 36, 248, 24, MUTED, MEDIUM, width = 452)
 
         // ---- chess ----
+        // ---- server (the Latitude itself) ----
+        val server = page()
+        for (i in 0 until 5) {
+            val t = card(server, 96 + i * 350, 226, 328, 172)
+            vitalTiles += Triple(
+                text(t, 30, 26, 21, MUTED, MEDIUM).apply { letterSpacing = 0.12f },
+                text(t, 30, 62, 54, WHITE, LIGHT, width = 280).apply { maxLines = 1 },
+                text(t, 30, 132, 23, MUTED, REGULAR, width = 280).apply { maxLines = 1 },
+            )
+        }
+        val scard = card(server, 96, 428, 1728, 592)
+        eyebrow(scard, 44, 40, "INTERNET SPEED")
+        text(scard, 44, 104, 22, MUTED, MEDIUM).apply { text = "DOWNLOAD"; letterSpacing = 0.12f }
+        speedDown = text(scard, 38, 136, 96, WHITE, THIN)
+        text(scard, 44, 272, 22, MUTED, MEDIUM).apply { text = "UPLOAD"; letterSpacing = 0.12f }
+        speedUp = text(scard, 40, 304, 60, WHITE, LIGHT)
+        text(scard, 270, 272, 22, MUTED, MEDIUM).apply { text = "PING"; letterSpacing = 0.12f }
+        speedPing = text(scard, 268, 304, 60, WHITE, LIGHT)
+        speedAt = text(scard, 44, 520, 24, MUTED, REGULAR, width = 440)
+        text(scard, 540, 40, 24, MUTED, REGULAR).text = "●  Download     ●  Upload     ·  last 7 days"
+        place(scard, speedChart, 520, 96, 1168, 456)
+
+        // ---- chess ----
         val chess = page()
         place(chess, chips, 96, 220, 1728, 56)
-        for (x in listOf(96, 760)) {
-            val c = card(chess, x, 300, 620, 720)
+        for (x in listOf(96, 676)) {
+            val c = card(chess, x, 300, 556, 720)
             gameCards += c
-            boards += image(c, 30, 30, 560)
-            turnBadges += text(c, 30, 616, 26, WHITE, MEDIUM, height = 52).apply {
+            boards += image(c, 30, 30, 496)
+            turnBadges += text(c, 30, 556, 26, WHITE, MEDIUM, height = 52).apply {
                 gravity = Gravity.CENTER
                 setPadding(26, 0, 26, 0)
             }
-            opponents += text(c, 30, 678, 30, SOFT, LIGHT, width = 560).apply { maxLines = 1 }
+            opponents += text(c, 30, 630, 30, SOFT, LIGHT, width = 496).apply { maxLines = 1 }
         }
-        noGames = card(chess, 96, 300, 1284, 720)
-        text(noGames, 0, 0, 44, MUTED, LIGHT, width = 1284, height = 720).apply {
+        noGames = card(chess, 96, 300, 1136, 720)
+        text(noGames, 0, 0, 44, MUTED, LIGHT, width = 1136, height = 720).apply {
             gravity = Gravity.CENTER
             text = "No games in progress"
         }
-        val pcard = card(chess, 1424, 300, 400, 720)
-        eyebrow(pcard, 30, 30, "DAILY PUZZLE")
-        puzzleBoard = image(pcard, 30, 84, 340)
-        puzzleText = text(pcard, 30, 452, 32, WHITE, LIGHT, width = 340).apply { setLineSpacing(8f, 1f) }
-        moreGames = text(pcard, 30, 640, 26, MUTED, REGULAR, width = 340)
+        val rcard2 = card(chess, 1256, 300, 568, 380)
+        eyebrow(rcard2, 30, 28, "RATINGS")
+        place(rcard2, ratingChart, 22, 70, 516, 200)
+        ratingLegend = text(rcard2, 30, 282, 20, SOFT, REGULAR, width = 508).apply { maxLines = 1 }
+        place(rcard2, resultsRow, 30, 324, 508, 36)
+        val pcard = card(chess, 1256, 700, 568, 320)
+        eyebrow(pcard, 30, 26, "DAILY PUZZLE")
+        puzzleBoard = image(pcard, 30, 64, 230)
+        puzzleText = text(pcard, 290, 70, 30, WHITE, LIGHT, width = 250).apply { setLineSpacing(8f, 1f) }
+        moreGames = text(pcard, 290, 210, 22, MUTED, REGULAR, width = 250)
 
         // ---- live (Lichess TV) ----
         val live = page()
@@ -253,7 +310,11 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             )
         }
 
-        showPage(0, animate = false)
+        if (!screensaver && prefs.getBoolean("pinned", false)) {
+            pinned = true
+            pinChip.visibility = VISIBLE
+            showPage(prefs.getInt("page", 0).coerceIn(0, pages.lastIndex), animate = false)
+        } else showPage(0, animate = false)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -288,6 +349,13 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
 
     // ---- navigation -------------------------------------------------------
 
+    /** OK on the remote: stay on this page (and remember it) until pressed again. */
+    fun togglePin() {
+        pinned = !pinned
+        pinChip.visibility = if (pinned) VISIBLE else GONE
+        prefs.edit().putBoolean("pinned", pinned).putInt("page", index).apply()
+    }
+
     fun step(delta: Int) {
         showPage((index + delta + pages.size) % pages.size)
         pausedUntil = System.currentTimeMillis() + PAUSE_MS
@@ -295,7 +363,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
 
     private val rotate = object : Runnable {
         override fun run() {
-            if (screensaver || System.currentTimeMillis() >= pausedUntil) showPage((index + 1) % pages.size)
+            if (screensaver || (!pinned && System.currentTimeMillis() >= pausedUntil)) showPage((index + 1) % pages.size)
             main.postDelayed(this, ROTATE_MS)
         }
     }
@@ -323,7 +391,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
                 setStroke(2, Color.parseColor("#80AA5CC3"))
             } else null
         }
-        headerTime.animate().alpha(if (i == 0) 0f else 1f).setDuration(FADE_MS)
+        headerTime.animate().alpha(if (i == 0 || pinned) 0f else 1f).setDuration(FADE_MS)
+        if (pinned) prefs.edit().putInt("page", i).apply()
         main.removeCallbacks(pollTv)
         if (i == LIVE && running) main.post(pollTv)
     }
@@ -375,6 +444,85 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         showCountdowns(f.optJSONArray("countdowns"))
         showAdGuard(f.optJSONObject("adguard"))
         f.optJSONObject("tv")?.let { showTv(it) }
+        f.optJSONObject("vitals")?.let { showVitals(it) }
+        f.optJSONObject("speed")?.let { showSpeed(it) }
+        f.optJSONObject("chessHistory")?.let { showRatings(it) }
+    }
+
+    private fun showVitals(v: JSONObject) {
+        val temp = if (v.isNull("cpuTemp")) null else v.getInt("cpuTemp")
+        val rows = listOf(
+            Triple("CPU TEMP", temp?.let { "$it°C" } ?: "—",
+                when { temp == null -> ""; temp >= 85 -> "Hot"; temp >= 70 -> "Warm"; else -> "Normal" }),
+            Triple("LOAD", v.getDouble("load").toString(), "across ${v.getInt("cores")} threads"),
+            Triple("MEMORY", "${v.getDouble("memUsedGb")} GB", "of ${v.getInt("memTotalGb")} GB"),
+            Triple("DISK FREE", "${v.getInt("diskFreeGb")} GB", "of ${v.getInt("diskTotalGb")} GB"),
+            Triple("UPTIME", "${v.getDouble("uptimeDays")} days", "since last restart"),
+        )
+        rows.forEachIndexed { i, (label, value, note) ->
+            vitalTiles[i].first.text = label
+            vitalTiles[i].second.text = value
+            vitalTiles[i].third.text = note
+        }
+        vitalTiles[0].second.setTextColor(when {
+            temp == null -> WHITE
+            temp >= 85 -> Color.parseColor("#FCA5A5")
+            temp >= 70 -> Color.parseColor("#FDE047")
+            else -> WHITE
+        })
+    }
+
+    private fun showSpeed(s: JSONObject) {
+        speedDown.text = withNote(s.getDouble("down").roundToInt().toString(), "Mbps")
+        speedUp.text = withNote(s.getDouble("up").roundToInt().toString(), "Mbps")
+        speedPing.text = withNote(s.getInt("ping").toString(), "ms")
+        speedAt.text = "Last tested ${s.getString("at")}"
+        val h = s.getJSONArray("history")
+        val down = (0 until h.length()).map { h.getJSONObject(it).getDouble("down").toFloat() }
+        val up = (0 until h.length()).map { h.getJSONObject(it).getDouble("up").toFloat() }
+        speedChart.setData(listOf(LineChart.Series(down, ACCENT), LineChart.Series(up, SKY)))
+    }
+
+    private fun showRatings(h: JSONObject) {
+        val colors = mapOf("bullet" to Color.parseColor("#FDBA74"), "blitz" to ACCENT,
+            "rapid" to SKY, "classical" to Color.parseColor("#86EFAC"),
+            "correspondence" to Color.parseColor("#F9A8D4"))
+        val series = h.getJSONArray("series")
+        val lines = mutableListOf<LineChart.Series>()
+        val legend = android.text.SpannableStringBuilder()
+        for (i in 0 until series.length()) {
+            val s = series.getJSONObject(i)
+            val perf = s.getString("perf")
+            val pts = s.getJSONArray("points")
+            val values = (0 until pts.length()).map { pts.getInt(it).toFloat() }
+            val color = colors[perf] ?: WHITE
+            lines += LineChart.Series(values, color)
+            val start = legend.length
+            legend.append("●")
+            legend.setSpan(ForegroundColorSpan(color), start, legend.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            legend.append(" ${perf.replaceFirstChar { it.uppercase() }.replace("Correspondence", "Corr")} ${values.last().toInt()}  ")
+        }
+        ratingChart.setData(lines)
+        ratingLegend.text = legend
+
+        resultsRow.removeAllViews()
+        text(resultsRow, 0, 0, 22, MUTED, MEDIUM, height = 36).apply {
+            text = "LAST ${h.getJSONArray("recent").length()}"
+            gravity = Gravity.CENTER_VERTICAL
+            letterSpacing = 0.12f
+        }
+        val recent = h.getJSONArray("recent")
+        for (i in 0 until recent.length()) {
+            val r = recent.getJSONObject(i).getString("result")
+            text(resultsRow, 110 + i * 40, 0, 20, WHITE, MEDIUM, width = 34, height = 34).apply {
+                gravity = Gravity.CENTER
+                text = r.first().uppercase()
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor(when (r) { "win" -> "#16A34A"; "loss" -> "#B91C1C"; else -> "#52525B" }))
+                }
+            }
+        }
     }
 
     private fun showOnThisDay(o: JSONObject?) {
@@ -609,12 +757,6 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             turnBadges[i].measure(0, 0)
             val rating = if (g.isNull("opponentRating")) "" else " (${g.getInt("opponentRating")})"
             opponents[i].text = "vs ${g.getString("opponent")}$rating"
-            (opponents[i].layoutParams as LayoutParams).apply {
-                leftMargin = 30 + turnBadges[i].measuredWidth + 18
-                topMargin = 626
-                width = 560 - turnBadges[i].measuredWidth - 18
-            }
-            opponents[i].requestLayout()
         }
         moreGames.text = if (games.length() > 2) "+ ${games.length() - 2} more game(s) on Lichess" else ""
     }
@@ -760,12 +902,14 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         const val FEED_MS = 60_000L
         const val FADE_MS = 450L
         const val TV_POLL_MS = 3_000L
-        const val LIVE = 4  // index of the Live page
+        const val LIVE = 5  // index of the Live page
         const val ACCENT_HEX = "#AA5CC3"
         val WHITE = Color.parseColor("#F4F4F7")
         val SOFT = Color.parseColor("#C9CAD6")
         val MUTED = Color.parseColor("#8A8C9C")
         val ACCENT_LIGHT = Color.parseColor("#C98BDB")
+        val ACCENT = Color.parseColor(ACCENT_HEX)
+        val SKY = Color.parseColor("#7DD3FC")
         val GREEN = Color.parseColor("#4ADE80")
         val RED = Color.parseColor("#EF4444")
         val THIN: Typeface = Typeface.create("sans-serif-thin", Typeface.NORMAL)

@@ -11,13 +11,18 @@ Roku's developer installer refused to start. Same three screens, fed by
 3. **Today**: Wikipedia's "on this day" with a picture, and countdowns
    (managed at http://192.168.1.158:8473/countdowns).
 4. **Homelab**: also AdGuard's blocked count and top blocked domain today.
-5. **Chess**: Lichess correspondence boards from Gambit, ratings, and the
-   daily puzzle position.
+   **Server**: the Latitude's CPU temp, load, memory, free disk and uptime,
+   plus internet speed (latest and a 7-day chart, from a 3-hourly test).
+5. **Chess**: Lichess correspondence boards from Gambit, a rating chart per
+   speed (rebuilt from rated games), the last 10 results, and the daily
+   puzzle position.
 6. **Live**: the top Lichess TV game, updating every 3 seconds while shown.
 
 NWS weather alerts show as a banner over every screen. Pages rotate every 30
 seconds; left/right (or rewind/fast-forward) flips and pauses rotation for 5
-minutes. The screen stays on while the app is open.
+minutes. **OK pins the current page** (a "Pinned" chip shows) so it stops
+rotating; press OK again to unpin. The pin is remembered across restarts.
+The screen stays on while the app is open.
 
 `LookoutView` lays everything out on a fixed 1920x1080 canvas scaled to the
 screen. v2 design: dark gradient with a soft purple glow, rounded translucent
