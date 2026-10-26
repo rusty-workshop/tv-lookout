@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
+import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.SweepGradient
 import android.graphics.Typeface
@@ -46,6 +47,10 @@ class RadarView(context: Context) : View(context) {
     }
     private val plane = Paint(Paint.ANTI_ALIAS_FLAG)
     private val home = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#C98BDB") }
+    private val beam = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 2.5f; color = Color.parseColor("#66C98BDB") }
+    private val pill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#CC0C0E14") }
+    private val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
+    private val placed = mutableListOf<RectF>()
     private val arrow = Path()
 
     private val spinner = ValueAnimator.ofFloat(0f, 360f).apply {
@@ -93,25 +98,33 @@ class RadarView(context: Context) : View(context) {
         // Sweep: a soft wedge trailing the beam.
         c.save()
         c.rotate(sweep - 90f, cx, cy)
+        // A narrow, faint trail behind a thin beam line.
         sweepPaint.shader = SweepGradient(cx, cy,
-            intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT, Color.parseColor("#40AA5CC3")),
-            floatArrayOf(0f, 0.85f, 1f))
+            intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT, Color.parseColor("#22AA5CC3")),
+            floatArrayOf(0f, 0.93f, 1f))
         c.drawCircle(cx, cy, r, sweepPaint)
+        c.drawLine(cx, cy, cx + r, cy, beam)
         c.restore()
 
         c.drawLine(cx - r, cy, cx + r, cy, axis)
         c.drawLine(cx, cy - r, cx, cy + r, axis)
+        placed.clear()
         for (nm in listOf(10.0, 20.0, 40.0)) {
             val rr = (r * nm / rangeNm).toFloat()
             c.drawCircle(cx, cy, rr, ring)
-            c.drawText("${nm.toInt()} nm", cx + 8f, cy - rr + 26f, label)
+            // Ring labels sit on the lower-right diagonal, away from "N"; plane labels avoid them.
+            val d = rr * 0.7071f
+            val text = "${nm.toInt()} nm"
+            c.drawText(text, cx + d + 6f, cy + d + 20f, label)
+            placed += RectF(cx + d + 2f, cy + d - 2f, cx + d + 10f + label.measureText(text), cy + d + 26f)
         }
-        c.drawText("N", cx - 8f, cy - r + 28f, label)
+        c.drawText("N", cx - 8f, cy - r + 30f, label)
         c.drawCircle(cx, cy, 9f, home)
 
         val nmPerDegLat = 60.0
         val nmPerDegLon = 60.0 * cos(Math.toRadians(centerLat))
-        for (p in planes) {
+        // Background traffic first, small and dimmed; the labelled nearest flights on top.
+        for (p in planes.sortedBy { it.highlight }) {
             val dx = (p.lon - centerLon) * nmPerDegLon
             val dy = (p.lat - centerLat) * nmPerDegLat
             val x = cx + (r * dx / rangeNm).toFloat()
@@ -119,10 +132,16 @@ class RadarView(context: Context) : View(context) {
             if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > r * r) continue
             val color = altitudeColor(p.alt)
             plane.color = color
+            plane.alpha = if (p.highlight) 255 else 140
+            if (p.highlight) {
+                halo.color = color
+                halo.alpha = 110
+                c.drawCircle(x, y, 22f, halo)
+            }
             c.save()
             c.rotate(p.track, x, y)
             arrow.reset()
-            val s = if (p.highlight) 15f else 11f
+            val s = if (p.highlight) 14f else 8f
             arrow.moveTo(x, y - s)
             arrow.lineTo(x + s * 0.7f, y + s)
             arrow.lineTo(x, y + s * 0.45f)
@@ -130,10 +149,26 @@ class RadarView(context: Context) : View(context) {
             arrow.close()
             c.drawPath(arrow, plane)
             c.restore()
-            if (p.highlight) {
-                callsign.color = color
-                c.drawText(p.callsign, x + 18f, y + 8f, callsign)
-            }
+            if (p.highlight) label(c, p.callsign, x, y, color)
+        }
+    }
+
+    /**
+     * Callsign in a small dark pill beside the plane. Tries right, left, below
+     * and above, and skips the label if all four would overlap one already drawn.
+     */
+    private fun label(c: Canvas, text: String, x: Float, y: Float, color: Int) {
+        val w = callsign.measureText(text) + 16f
+        val h = 32f
+        val spots = listOf(x + 26f to y - h / 2, x - 26f - w to y - h / 2, x - w / 2 to y + 24f, x - w / 2 to y - 24f - h)
+        for ((lx, ly) in spots) {
+            val box = RectF(lx, ly, lx + w, ly + h)
+            if (placed.any { RectF.intersects(it, box) }) continue
+            placed += box
+            c.drawRoundRect(box, 10f, 10f, pill)
+            callsign.color = color
+            c.drawText(text, lx + 8f, ly + 23f, callsign)
+            return
         }
     }
 
