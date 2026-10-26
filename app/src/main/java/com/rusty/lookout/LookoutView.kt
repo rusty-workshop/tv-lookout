@@ -112,6 +112,14 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
     private val speedAt: TextView
     private val speedChart = LineChart(context)
 
+    // chess: 2x2 grid used when there are 3+ games, paging if more than 4
+    private class GameTile(val card: FrameLayout, val board: ImageView, val badge: TextView,
+                           val opponent: TextView, val info: TextView)
+    private val gridTiles = mutableListOf<GameTile>()
+    private lateinit var gridPager: TextView
+    private var chessGames = listOf<JSONObject>()
+    private var chessOffset = 0
+
     // chess rating card
     private val ratingChart = LineChart(context)
     private val ratingLegend: TextView
@@ -336,6 +344,18 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             }
             opponents += text(c, 30, 630, 30, SOFT, LIGHT, width = 496).apply { maxLines = 1 }
         }
+        for (i in 0 until 4) {
+            val c = card(chess, 96 + (i % 2) * 580, 300 + (i / 2) * 370, 556, 350)
+            gridTiles += GameTile(
+                c,
+                image(c, 25, 25, 300, radius = 14f),
+                text(c, 348, 30, 22, WHITE, MEDIUM, height = 44).apply { gravity = Gravity.CENTER; setPadding(18, 0, 18, 0) },
+                text(c, 348, 96, 28, WHITE, REGULAR, width = 186).apply { maxLines = 3 },
+                text(c, 348, 230, 22, MUTED, REGULAR, width = 186).apply { setLineSpacing(4f, 1f) },
+            )
+            c.visibility = GONE
+        }
+        gridPager = text(chess, 100, 1030, 22, MUTED, MEDIUM, width = 600)
         noGames = card(chess, 96, 300, 1136, 720)
         text(noGames, 0, 0, 44, MUTED, LIGHT, width = 1136, height = 720).apply {
             gravity = Gravity.CENTER
@@ -637,6 +657,8 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         if ((i == SKY_PAGE || i == AIRPORT_PAGE) && running) main.post(pollPlanes)
         main.removeCallbacks(pollRadar)
         if (i == RADAR_PAGE && running) main.post(pollRadar)
+        main.removeCallbacks(pageGames)
+        if (i == CHESS_PAGE && running) main.postDelayed(pageGames, 12_000L)
         main.removeCallbacks(pollSpace)
         if (i == SPACE_PAGE && running) main.post(pollSpace)
     }
@@ -1320,29 +1342,72 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
             x += chip.measuredWidth + 14
         }
 
-        val games = c.getJSONArray("games")
-        noGames.visibility = if (games.length() == 0) VISIBLE else GONE
-        for (i in 0..1) {
-            if (i >= games.length()) {
-                gameCards[i].visibility = GONE
-                continue
-            }
-            val g = games.getJSONObject(i)
-            gameCards[i].visibility = VISIBLE
+        val games = c.getJSONArray("games").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
+            .sortedByDescending { it.getBoolean("myTurn") }  // your move first
+        chessGames = games
+        noGames.visibility = if (games.isEmpty()) VISIBLE else GONE
+        moreGames.text = ""
+        val big = games.size <= 2
+        gameCards.forEachIndexed { i, card ->
+            val g = games.getOrNull(i)
+            if (!big || g == null) { card.visibility = GONE; return@forEachIndexed }
+            card.visibility = VISIBLE
             loadImage(boards[i], SERVER + g.getString("board"))
-            val mine = g.getBoolean("myTurn")
-            turnBadges[i].text = if (mine) "Your move" else "Their move"
-            turnBadges[i].setTextColor(if (mine) WHITE else SOFT)
-            turnBadges[i].background = GradientDrawable().apply {
-                cornerRadius = 26f
-                setColor(Color.parseColor(if (mine) ACCENT_HEX else "#14FFFFFF"))
-                if (!mine) setStroke(2, Color.parseColor("#33FFFFFF"))
-            }
-            turnBadges[i].measure(0, 0)
+            styleBadge(turnBadges[i], g.getBoolean("myTurn"))
             val rating = if (g.isNull("opponentRating")) "" else " (${g.getInt("opponentRating")})"
             opponents[i].text = "vs ${g.getString("opponent")}$rating"
         }
-        moreGames.text = if (games.length() > 2) "+ ${games.length() - 2} more game(s) on Lichess" else ""
+        if (big) {
+            gridTiles.forEach { it.card.visibility = GONE }
+            gridPager.text = ""
+        } else {
+            if (chessOffset >= games.size) chessOffset = 0
+            showGrid()
+        }
+    }
+
+    /** Four games at a time in the 2x2 grid, starting at [chessOffset]. */
+    private fun showGrid() {
+        val games = chessGames
+        gridTiles.forEachIndexed { i, t ->
+            val g = games.getOrNull(chessOffset + i)
+            if (g == null) { t.card.visibility = GONE; return@forEachIndexed }
+            t.card.visibility = VISIBLE
+            loadImage(t.board, SERVER + g.getString("board"))
+            styleBadge(t.badge, g.getBoolean("myTurn"))
+            t.opponent.text = "vs ${g.getString("opponent")}"
+            val rating = if (g.isNull("opponentRating")) null else "Rated ${g.getInt("opponentRating")}"
+            val left = if (g.isNull("secondsLeft")) null else g.getInt("secondsLeft").let { secs ->
+                val h = secs / 3600
+                if (h >= 24) "${h / 24}d ${h % 24}h left" else "${h}h ${secs % 3600 / 60}m left"
+            }
+            t.info.text = listOfNotNull(rating, left).joinToString("\n")
+        }
+        gridPager.text = if (games.size > 4)
+            "Games ${chessOffset + 1}–${minOf(chessOffset + 4, games.size)} of ${games.size}"
+        else "${games.size} games"
+    }
+
+    /** With more than four games, flip to the next four every 12 seconds while Chess is up. */
+    private val pageGames = object : Runnable {
+        override fun run() {
+            if (index != CHESS_PAGE || !running) return
+            if (chessGames.size > 4) {
+                chessOffset = if (chessOffset + 4 >= chessGames.size) 0 else chessOffset + 4
+                showGrid()
+            }
+            main.postDelayed(this, 12_000L)
+        }
+    }
+
+    private fun styleBadge(badge: TextView, mine: Boolean) {
+        badge.text = if (mine) "Your move" else "Their move"
+        badge.setTextColor(if (mine) WHITE else SOFT)
+        badge.background = GradientDrawable().apply {
+            cornerRadius = 26f
+            setColor(Color.parseColor(if (mine) ACCENT_HEX else "#14FFFFFF"))
+            if (!mine) setStroke(2, Color.parseColor("#33FFFFFF"))
+        }
     }
 
     private fun showPuzzle(p: JSONObject?) {
@@ -1492,6 +1557,7 @@ class LookoutView(context: Context, private val screensaver: Boolean) : FrameLay
         const val FADE_MS = 450L
         const val LIVE = 5  // index of the Live page
         const val SKY_PAGE = 6
+        const val CHESS_PAGE = 4
         const val AIRPORT_PAGE = 7
         const val RADAR_PAGE = 8
         const val SPACE_PAGE = 9
