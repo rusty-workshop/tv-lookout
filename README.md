@@ -31,7 +31,8 @@ Roku's developer installer refused to start. Same three screens, fed by
    live T-minus countdown to the next exact-time launch anywhere.
 
 8. **Radar**: the NWS KJAX radar loop (animated GIF via `ImageDecoder`,
-   refreshed at most every 5 min) with conditions and 12-hour rain chances.
+   checked every 30 s with If-Modified-Since, so a new scan shows within 30 s
+   of NWS posting it) with conditions and 12-hour rain chances.
 9. **Tonight**: Mercury to Saturn (visible or not, best time, direction,
     altitude, rise/set) and the next visible ISS pass.
 
