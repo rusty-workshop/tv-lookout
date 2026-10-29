@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lookout</title>
+<meta name="description" content="Lookout is a wall display for the living room TV: clock, weather, homelab health, chess, planes overhead, rocket launches and the night sky.">
+<meta property="og:title" content="Lookout">
+<meta property="og:description" content="A wall display for the living room TV. Android TV and Roku.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2' y='6' width='28' height='18' rx='3' fill='%23070b16' stroke='%235ee0ff' stroke-width='2'/><circle cx='16' cy='15' r='4' fill='none' stroke='%23ffbe55' stroke-width='2'/><path d='M11 28h10' stroke='%235ee0ff' stroke-width='2'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;500;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#05070f; --bg2:#0b1122; --panel:#0f1830; --line:rgba(120,170,255,.14);
+    --fg:#e8f0ff; --dim:rgba(232,240,255,.58); --cyan:#5ee0ff; --amber:#ffbe55; --green:#4dff9a; --red:#ff5d6c; --violet:#a98bff;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0; background:var(--bg); color:var(--fg); font-family:'Barlow',system-ui,sans-serif; -webkit-font-smoothing:antialiased; overflow-x:hidden;}
+  a{color:inherit;}
+  .wrap{max-width:1200px; margin:0 auto; padding-inline:clamp(16px,4vw,40px);}
+  .cond{font-family:'Barlow Condensed',sans-serif;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+
+  nav{display:flex; justify-content:space-between; align-items:center; padding-block:22px;}
+  .logo{display:flex; gap:12px; align-items:center; text-decoration:none; font-family:'Barlow Condensed'; font-weight:700; font-size:1.5rem; letter-spacing:.06em; text-transform:uppercase;}
+  .logo i{width:30px; height:20px; border:2px solid var(--cyan); border-radius:4px; position:relative;}
+  .logo i::after{content:''; position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px; border-radius:50%; background:var(--amber); box-shadow:0 0 10px var(--amber);}
+  nav .links{display:flex; gap:22px; font-size:.92rem; color:var(--dim);}
+  nav .links a{text-decoration:none;} nav .links a:hover{color:var(--cyan);}
+
+  .hero{text-align:center; padding-block:30px 20px;}
+  .hero .eyebrow{font-family:'JetBrains Mono'; font-size:.78rem; color:var(--cyan); letter-spacing:.12em;}
+  h1{font-family:'Barlow Condensed'; font-weight:700; font-size:clamp(3.6rem,11vw,9.5rem); line-height:.85; letter-spacing:.01em; text-transform:uppercase; margin:12px 0 16px;}
+  h1 span{color:transparent; -webkit-text-stroke:2px var(--cyan);}
+  .hero p{color:var(--dim); font-size:1.18rem; line-height:1.55; max-width:58ch; margin:0 auto 34px;}
+
+  /* ---- the TV ---- */
+  .room{position:relative; padding-block:20px 90px;}
+  .room::before{content:''; position:absolute; left:50%; top:30%; width:90%; height:60%; transform:translateX(-50%); background:radial-gradient(ellipse, rgba(94,224,255,.18), transparent 65%); filter:blur(30px);}
+  .tv{position:relative; width:min(1000px,100%); margin:0 auto; aspect-ratio:16/9; background:#000; border-radius:14px; padding:10px; box-shadow:0 0 0 2px #1a1f2c, 0 60px 120px -40px rgba(94,224,255,.35);}
+  .tv::after{content:''; position:absolute; left:50%; bottom:-34px; width:30%; height:24px; transform:translateX(-50%); background:linear-gradient(#1a1f2c,#0a0d14); clip-path:polygon(12% 0,88% 0,100% 100%,0 100%);}
+  .scr{position:relative; width:100%; height:100%; border-radius:6px; overflow:hidden; background:linear-gradient(160deg,#081127,#0d1a38 60%,#13224a); container-type:size;}
+  .page{position:absolute; inset:0; padding:5cqh 4.5cqw; opacity:0; transform:scale(1.03); transition: opacity .7s ease, transform .9s cubic-bezier(.2,.8,.2,1); pointer-events:none;}
+  .page.on{opacity:1; transform:none;}
+  .ptitle{position:absolute; left:4.5cqw; top:4cqh; font-family:'JetBrains Mono'; font-size:2.1cqh; color:var(--cyan); letter-spacing:.14em; text-transform:uppercase;}
+  .dots{position:absolute; bottom:3.5cqh; left:50%; transform:translateX(-50%); display:flex; gap:1cqw; z-index:3;}
+  .dots i{width:1.1cqh; height:1.1cqh; border-radius:50%; background:rgba(255,255,255,.25); transition:all .3s;}
+  .dots i.on{background:var(--cyan); width:3cqh; border-radius:1cqh;}
+  .alert{position:absolute; left:0; right:0; top:0; z-index:4; background:linear-gradient(90deg,#b8323f,#ff5d6c); color:#fff; font-weight:600; font-size:2.3cqh; padding:1.2cqh 4.5cqw; transform:translateY(-100%); transition:transform .5s cubic-bezier(.2,.8,.2,1);}
+  .alert.show{transform:none;}
+
+  /* page: clock */
+  .p-clock .big{position:absolute; left:4.5cqw; top:14cqh; font-family:'Barlow Condensed'; font-weight:300; font-size:34cqh; line-height:.9; letter-spacing:-.01em;}
+  .p-clock .date{position:absolute; left:5cqw; top:50cqh; font-size:4.4cqh; color:var(--dim);}
+  .p-clock .wx{position:absolute; right:4.5cqw; top:14cqh; text-align:right;}
+  .p-clock .wx b{font-family:'Barlow Condensed'; font-weight:500; font-size:16cqh; display:block; line-height:1;}
+  .p-clock .wx span{font-size:3.2cqh; color:var(--dim);}
+  .p-clock .wx .sun{font-size:12cqh; line-height:1;}
+  .hours{position:absolute; left:4.5cqw; right:4.5cqw; bottom:10cqh; display:grid; grid-template-columns:repeat(12,1fr); gap:.6cqw; text-align:center; font-size:2.3cqh; color:var(--dim);}
+  .hours div b{display:block; color:var(--fg); font-size:3cqh; margin:.6cqh 0; font-weight:600;}
+  .hours i{display:block; height:6cqh; margin:0 auto; width:60%; background:linear-gradient(to top, rgba(94,224,255,.6), transparent); border-radius:1cqh 1cqh 0 0; font-style:normal;}
+  .iss{position:absolute; left:5cqw; top:60cqh; font-size:2.6cqh; color:var(--amber);}
+
+  /* page: homelab */
+  .tiles{position:absolute; left:4.5cqw; right:4.5cqw; top:13cqh; display:grid; grid-template-columns:repeat(4,1fr); gap:1.6cqh;}
+  .tile{background:rgba(255,255,255,.05); border:1px solid var(--line); border-radius:1.6cqh; padding:2cqh 1.6cqw; font-size:2.8cqh;}
+  .tile b{display:flex; align-items:center; gap:1cqw; font-weight:600;}
+  .tile b::before{content:''; width:1.6cqh; height:1.6cqh; border-radius:50%; background:var(--green); box-shadow:0 0 1.5cqh var(--green);}
+  .tile.warn b::before{background:var(--amber); box-shadow:0 0 1.5cqh var(--amber);}
+  .tile small{display:block; color:var(--dim); font-size:2.2cqh; margin-top:.6cqh;}
+  .rip{position:absolute; left:4.5cqw; right:4.5cqw; bottom:11cqh; font-size:2.8cqh;}
+  .rip .bar{height:1.6cqh; background:rgba(255,255,255,.08); border-radius:1cqh; overflow:hidden; margin-top:1cqh;}
+  .rip .bar i{display:block; height:100%; width:62%; background:linear-gradient(90deg,var(--cyan),var(--violet)); animation: rip 8s linear infinite;}
+  @keyframes rip{ from{width:40%;} to{width:96%;} }
+
+  /* page: chess */
+  .p-chess .boards{position:absolute; left:4.5cqw; top:13cqh; display:flex; gap:3cqw;}
+  .cb{width:42cqh; aspect-ratio:1; display:grid; grid-template-columns:repeat(8,1fr); border-radius:.8cqh; overflow:hidden; box-shadow:0 2cqh 5cqh rgba(0,0,0,.5);}
+  .cb i{display:block;} .cb i.l{background:#dee3e6;} .cb i.d{background:#8ca2ad;}
+  .cb i.p::after{content:''; display:block; width:60%; height:60%; margin:20%; border-radius:50%;}
+  .cb i.w::after{background:#fff; box-shadow:inset 0 0 0 .3cqh #222;} .cb i.b::after{background:#222;}
+  .cb + .meta{font-size:3cqh;}
+  .p-chess .meta{display:flex; flex-direction:column; gap:1.6cqh; justify-content:center; font-size:3cqh;}
+  .p-chess .meta b{font-family:'Barlow Condensed'; font-weight:500; font-size:6cqh; color:var(--amber);}
+  .p-chess .meta span{color:var(--dim);}
+  .spark{width:40cqw; height:12cqh;}
+
+  /* page: sky radar */
+  .radar{position:absolute; left:4.5cqw; top:12cqh; width:66cqh; aspect-ratio:1; border-radius:50%; background:radial-gradient(circle, rgba(77,255,154,.08), transparent 70%); border:1px solid rgba(77,255,154,.35);}
+  .radar::before, .radar::after{content:''; position:absolute; inset:16.6%; border-radius:50%; border:1px solid rgba(77,255,154,.22);}
+  .radar::after{inset:33.3%;}
+  .sweep{position:absolute; inset:0; border-radius:50%; background:conic-gradient(from 0deg, rgba(77,255,154,.45), transparent 18%); animation: sweep 4s linear infinite;}
+  @keyframes sweep{ to{transform:rotate(360deg);} }
+  .blip{position:absolute; width:1.4cqh; height:1.4cqh; margin:-.7cqh; border-radius:50%; background:var(--green); box-shadow:0 0 1.5cqh var(--green);}
+  .blip span{position:absolute; left:2cqh; top:-.8cqh; font-family:'JetBrains Mono'; font-size:1.9cqh; color:var(--green); white-space:nowrap;}
+  .flights{position:absolute; right:4.5cqw; top:13cqh; width:44cqw; font-size:2.7cqh;}
+  .flights div{display:flex; justify-content:space-between; padding:1.2cqh 0; border-bottom:1px solid var(--line);}
+  .flights b{font-family:'JetBrains Mono'; color:var(--green); font-weight:600;}
+  .launch{position:absolute; right:4.5cqw; bottom:10cqh; width:44cqw; background:rgba(255,190,85,.08); border:1px solid rgba(255,190,85,.3); border-radius:1.4cqh; padding:2cqh 2cqw; font-size:2.6cqh;}
+  .launch b{display:block; font-family:'Barlow Condensed'; font-size:6cqh; color:var(--amber); font-weight:500; letter-spacing:.02em;}
+
+  /* page: tonight */
+  .p-night{background:radial-gradient(ellipse at 50% 120%, #1d2a5a, transparent 70%);}
+  .planets{position:absolute; left:4.5cqw; right:4.5cqw; top:20cqh; height:44cqh;}
+  .planets svg{width:100%; height:100%;}
+  .tonight-list{position:absolute; left:4.5cqw; right:4.5cqw; bottom:10cqh; display:grid; grid-template-columns:repeat(5,1fr); gap:1cqw; font-size:2.5cqh; text-align:center;}
+  .tonight-list b{display:block; font-family:'Barlow Condensed'; font-size:4.4cqh; font-weight:500;}
+  .tonight-list span{color:var(--dim);}
+
+  /* remote */
+  .remote{display:flex; justify-content:center; gap:14px; margin-top:58px; align-items:center;}
+  .remote button{width:54px; height:54px; border-radius:50%; border:1px solid var(--line); background:var(--panel); color:var(--fg); font-size:1.2rem; cursor:pointer; transition: transform .15s, background .2s;}
+  .remote button:hover{background:#18264a;} .remote button:active{transform:scale(.92);}
+  .remote .lbl{font-family:'JetBrains Mono'; font-size:.78rem; color:var(--dim); min-width:150px; text-align:center;}
+
+  section{padding-block:90px;}
+  .sh{font-family:'Barlow Condensed'; font-weight:700; text-transform:uppercase; font-size:clamp(2.4rem,6vw,4.6rem); line-height:.9; margin:0 0 14px; letter-spacing:.01em;}
+  .sp{color:var(--dim); font-size:1.1rem; line-height:1.6; max-width:60ch; margin:0 0 40px;}
+  .grid{display:grid; grid-template-columns:repeat(5,1fr); gap:12px;}
+  .gc{background:var(--bg2); border:1px solid var(--line); border-radius:18px; padding:20px; transition: transform .25s, border-color .25s;}
+  .gc:hover{transform:translateY(-5px); border-color:var(--cyan);}
+  .gc .n{font-family:'JetBrains Mono'; color:var(--cyan); font-size:.78rem;}
+  .gc h3{font-family:'Barlow Condensed'; font-weight:600; font-size:1.5rem; text-transform:uppercase; margin:8px 0 6px;}
+  .gc p{margin:0; color:var(--dim); font-size:.9rem; line-height:1.5;}
+  .duo{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+  .plat{border-radius:24px; padding:30px; border:1px solid var(--line); background:var(--bg2);}
+  .plat h3{font-family:'Barlow Condensed'; font-size:2rem; text-transform:uppercase; margin:0 0 6px;}
+  .plat .badge{display:inline-block; font-family:'JetBrains Mono'; font-size:.72rem; padding:4px 10px; border-radius:100px; margin-bottom:14px;}
+  .plat p{color:var(--dim); line-height:1.6; margin:0 0 16px;}
+  .plat a{color:var(--cyan); font-weight:600; text-decoration:none;}
+  .flow{display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:10px;}
+  .flow .box{padding:16px 20px; border:1px solid var(--line); border-radius:14px; background:var(--bg2); font-weight:600;}
+  .flow .box small{display:block; color:var(--dim); font-weight:400; font-size:.82rem;}
+  .flow .arrow{flex:1; min-width:40px; height:2px; background:repeating-linear-gradient(90deg,var(--cyan) 0 8px,transparent 8px 16px); background-size:32px 2px; animation: flowa 1s linear infinite;}
+  @keyframes flowa{ to{background-position:32px 0;} }
+  pre{background:#02040a; border:1px solid var(--line); border-radius:16px; padding:20px; overflow:auto; font-family:'JetBrains Mono'; font-size:.8rem; line-height:1.7; color:#cfe0ff;}
+  pre .c{color:#5f7299;}
+  footer{border-top:1px solid var(--line); padding-block:30px 60px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; color:var(--dim); font-size:.9rem;}
+  footer a{color:var(--cyan); text-decoration:none;}
+  .reveal{opacity:0; transform:translateY(24px); transition: all .8s cubic-bezier(.2,.8,.2,1);} .reveal.in{opacity:1; transform:none;}
+
+  @media (max-width:900px){ .grid{grid-template-columns:repeat(2,1fr);} .duo{grid-template-columns:1fr;} nav .links a:not(:last-child){display:none;} }
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important;} .reveal{opacity:1; transform:none;} }
+</style>
+</head>
+<body>
+<header class="wrap">
+  <nav>
+    <a class="logo" href="#"><i></i>Lookout</a>
+    <div class="links"><a href="#pages">Pages</a><a href="#platforms">TV + Roku</a><a href="#setup">Setup</a><a href="https://github.com/rusty-workshop/tv-lookout">GitHub ↗</a></div>
+  </nav>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div class="eyebrow">// android tv · roku · fed by the homelab</div>
+    <h1>The TV is a <span>window</span> now.</h1>
+    <p>Lookout is a wall display for the living room TV. When nobody's watching anything, it shows the things worth glancing at: the time, the weather, whether the homelab is happy, the chess game I'm losing, the planes overhead, and the next rocket out of the Cape.</p>
+  </div>
+
+  <div class="wrap room">
+    <div class="tv">
+      <div class="scr" id="tvScr">
+        <div class="alert" id="tvAlert">⚠ Rip current statement for Duval County until 8 PM</div>
+
+        <div class="page p-clock on">
+          <div class="ptitle">clock · weather</div>
+          <div class="big cond" id="lkClock">9:41</div>
+          <div class="date" id="lkDate">Wednesday, October 28</div>
+          <div class="iss">🛰 ISS visible 7:12 pm · 5 min · NW → SE</div>
+          <div class="wx"><div class="sun">⛅</div><b>78°</b><span>Jacksonville · partly cloudy</span><br><span>AQI 31 · UV 4</span></div>
+          <div class="hours" id="lkHours"></div>
+        </div>
+
+        <div class="page p-lab">
+          <div class="ptitle">homelab</div>
+          <div class="tiles">
+            <div class="tile"><b>Jellyfin</b><small>up 14 days</small></div>
+            <div class="tile"><b>Vaultwarden</b><small>backed up 3h ago</small></div>
+            <div class="tile"><b>AdGuard</b><small>2,418 blocked today</small></div>
+            <div class="tile"><b>Uptime Kuma</b><small>18 / 18 monitors</small></div>
+            <div class="tile"><b>Syncthing</b><small>in sync</small></div>
+            <div class="tile warn"><b>Disk</b><small>82% · 71 GB free</small></div>
+            <div class="tile"><b>Gambit</b><small>2 games, 1 your move</small></div>
+            <div class="tile"><b>Internet</b><small>412 ↓ · 21 ↑ Mbps</small></div>
+          </div>
+          <div class="rip">💿 Ripping <b>Spirited Away (2001)</b> · transcoding H.265<div class="bar"><i></i></div></div>
+        </div>
+
+        <div class="page p-chess">
+          <div class="ptitle">chess</div>
+          <div class="boards"><div class="cb" id="lkBoard"></div>
+            <div class="meta"><span>vs. correspondence opponent</span><b>Your move</b><span>2 days 4 hours left</span>
+              <svg class="spark" viewBox="0 0 200 60"><polyline fill="none" stroke="#ffbe55" stroke-width="3" points="0,48 20,44 40,46 60,38 80,40 100,30 120,34 140,22 160,26 180,14 200,18"/></svg>
+              <span>rating, last 30 games</span></div>
+          </div>
+        </div>
+
+        <div class="page p-sky">
+          <div class="ptitle">sky · 40 nm</div>
+          <div class="radar"><div class="sweep"></div>
+            <div class="blip" style="left:30%;top:40%"><span>DAL1423</span></div>
+            <div class="blip" style="left:64%;top:28%"><span>SWA2217</span></div>
+            <div class="blip" style="left:58%;top:70%"><span>N512RV</span></div>
+            <div class="blip" style="left:22%;top:66%"><span>AAL890</span></div>
+          </div>
+          <div class="flights">
+            <div><b>DAL1423</b><span>ATL → JAX · 4,200 ft</span></div>
+            <div><b>SWA2217</b><span>BWI → MCO · 34,000 ft</span></div>
+            <div><b>AAL890</b><span>JAX → CLT · 12,800 ft</span></div>
+          </div>
+          <div class="launch">Next launch from the Cape<b id="lkT">T− 02:14:37</b>Falcon 9 · Starlink group</div>
+        </div>
+
+        <div class="page p-night">
+          <div class="ptitle">tonight</div>
+          <div class="planets"><svg viewBox="0 0 1000 300" preserveAspectRatio="none">
+            <path d="M0 290 Q500 -40 1000 290" fill="none" stroke="rgba(169,139,255,.35)" stroke-dasharray="6 10"/>
+            <circle cx="180" cy="190" r="9" fill="#ffd9a0"/><circle cx="420" cy="78" r="16" fill="#ffe2b5"/><circle cx="640" cy="92" r="12" fill="#ff9a6a"/><circle cx="820" cy="190" r="10" fill="#e8d7a0"/>
+            <circle cx="300" cy="40" r="2" fill="#fff"/><circle cx="560" cy="30" r="1.6" fill="#fff"/><circle cx="760" cy="60" r="2" fill="#fff"/><circle cx="90" cy="80" r="1.6" fill="#fff"/><circle cx="900" cy="40" r="1.6" fill="#fff"/>
+          </svg></div>
+          <div class="tonight-list"><div><b>Venus</b><span>W · sets 7:40</span></div><div><b>Jupiter</b><span>E · rises 9:12</span></div><div><b>Mars</b><span>E · after midnight</span></div><div><b>Saturn</b><span>S · all evening</span></div><div><b>Moon</b><span>62% waxing</span></div></div>
+        </div>
+
+        <div class="dots" id="tvDots"></div>
+      </div>
+    </div>
+    <div class="remote">
+      <button type="button" id="tvPrev" aria-label="Previous page">◀</button>
+      <span class="lbl" id="tvLbl">clock · weather</span>
+      <button type="button" id="tvNext" aria-label="Next page">▶</button>
+    </div>
+  </div>
+
+  <section class="wrap" id="pages">
+    <h2 class="sh reveal">Ten pages.<br>Zero subscriptions.</h2>
+    <p class="sp reveal">Pages rotate on their own; the remote flips by hand. Pick which ones show, their order and how long each stays from a phone-friendly settings page on the homelab.</p>
+    <div class="grid">
+      <div class="gc reveal"><div class="n">01</div><h3>Clock</h3><p>Time, weather, air quality, UV, the next 12 hours and the next ISS pass.</p></div>
+      <div class="gc reveal"><div class="n">02</div><h3>Homelab</h3><p>Service tiles, last backup, blocked ads and the DVD ripper's progress.</p></div>
+      <div class="gc reveal"><div class="n">03</div><h3>Today</h3><p>Wikipedia's "on this day" with a picture, plus countdowns.</p></div>
+      <div class="gc reveal"><div class="n">04</div><h3>Server</h3><p>CPU temp, load, memory, disk, uptime and a week of internet speed.</p></div>
+      <div class="gc reveal"><div class="n">05</div><h3>Chess</h3><p>Boards from Gambit, rating charts, recent results, the daily puzzle.</p></div>
+      <div class="gc reveal"><div class="n">06</div><h3>Live</h3><p>The top Lichess TV game in real time, drawn on the TV itself.</p></div>
+      <div class="gc reveal"><div class="n">07</div><h3>Sky</h3><p>A radar of aircraft within 40 nm, routes, and the next launch countdown.</p></div>
+      <div class="gc reveal"><div class="n">08</div><h3>Radar</h3><p>The National Weather Service radar loop, fresh within 30 seconds.</p></div>
+      <div class="gc reveal"><div class="n">09</div><h3>Tonight</h3><p>Which planets are up, where, and when.</p></div>
+      <div class="gc reveal"><div class="n">⚠</div><h3>Alerts</h3><p>Weather alerts as a banner across every page. Red is severe, amber is moderate.</p></div>
+    </div>
+  </section>
+
+  <section class="wrap" id="platforms">
+    <h2 class="sh reveal">Two TVs, one feed.</h2>
+    <p class="sp reveal">Lookout started life as a Roku channel. When the Roku's developer installer refused to start, it got rewritten as a native Android TV app, and kept growing.</p>
+    <div class="duo">
+      <div class="plat reveal"><span class="badge" style="background:rgba(94,224,255,.12);color:var(--cyan)">ANDROID TV · KOTLIN</span><h3>tv-lookout</h3><p>The main one, running on a Sony Google TV. Every page, a live Lichess board drawn locally with smooth slides, an animated weather radar, and a screensaver mode so it comes back on its own.</p><a href="https://github.com/rusty-workshop/tv-lookout">rusty-workshop/tv-lookout ↗</a></div>
+      <div class="plat reveal"><span class="badge" style="background:rgba(169,139,255,.14);color:var(--violet)">ROKU · BRIGHTSCRIPT</span><h3>roku-lookout</h3><p>The original three pages (clock, homelab, chess) as a Roku channel and screensaver. Roku allows one sideloaded channel per device, so all three ideas live in one.</p><a href="https://github.com/rusty-workshop/roku-lookout">rusty-workshop/roku-lookout ↗</a></div>
+    </div>
+    <div class="flow reveal" style="margin-top:40px">
+      <div class="box">Open-Meteo, NWS, adsb.lol,<br>Lichess, Launch Library<small>public APIs</small></div>
+      <div class="arrow"></div>
+      <div class="box">lookout-feed<small>on the homelab, port 8473</small></div>
+      <div class="arrow"></div>
+      <div class="box">📺 the TV<small>LAN only</small></div>
+    </div>
+  </section>
+
+  <section class="wrap" id="setup">
+    <h2 class="sh reveal">Install.</h2>
+    <p class="sp reveal">The feed server lives in <a href="https://github.com/rusty-workshop/latitude-services/tree/main/lookout-feed" style="color:var(--cyan)">latitude-services</a>. The TV app is a normal Android TV build.</p>
+<pre class="reveal"><span class="c"># the TV (Android TV / Google TV)</span>
+./gradlew assembleRelease
+adb connect &lt;tv-ip&gt;:5555
+adb install -r app/build/outputs/apk/release/app-release.apk
+<span class="c"># optional: Settings → Screensaver → Lookout</span></pre>
+  </section>
+</main>
+
+<footer class="wrap">
+  <span>Lookout is AGPL-3.0-or-later. Made by <a href="https://rusty.is-a.dev">Rusty</a>.</span>
+  <span><a href="https://github.com/rusty-workshop/tv-lookout">GitHub ↗</a></span>
+</footer>
+
+<script>
+(function(){
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var pages = document.querySelectorAll('.page'), dots = document.getElementById('tvDots'), lbl = document.getElementById('tvLbl');
+  var cur = 0, timer;
+  pages.forEach(function(){ dots.appendChild(document.createElement('i')); });
+  function show(i){
+    cur = (i + pages.length) % pages.length;
+    pages.forEach(function(p, k){ p.classList.toggle('on', k === cur); });
+    [].forEach.call(dots.children, function(d, k){ d.classList.toggle('on', k === cur); });
+    lbl.textContent = pages[cur].querySelector('.ptitle').textContent;
+  }
+  function auto(){ clearInterval(timer); if (!reduced) timer = setInterval(function(){ show(cur + 1); }, 6000); }
+  document.getElementById('tvPrev').addEventListener('click', function(){ show(cur - 1); auto(); });
+  document.getElementById('tvNext').addEventListener('click', function(){ show(cur + 1); auto(); });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowRight'){ show(cur + 1); auto(); }
+    if (e.key === 'ArrowLeft'){ show(cur - 1); auto(); }
+  });
+  show(0); auto();
+
+  // the weather alert drops in now and then
+  var al = document.getElementById('tvAlert');
+  setTimeout(function(){ al.classList.add('show'); setTimeout(function(){ al.classList.remove('show'); }, 5000); }, 3500);
+
+  function clock(){
+    var d = new Date();
+    document.getElementById('lkClock').textContent = (d.getHours() % 12 || 12) + ':' + ('0' + d.getMinutes()).slice(-2);
+    document.getElementById('lkDate').textContent = d.toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric'});
+  }
+  clock(); setInterval(clock, 15000);
+
+  var hrs = document.getElementById('lkHours'), h0 = new Date().getHours();
+  for (var i = 1; i <= 12; i++){
+    var h = (h0 + i) % 24, t = Math.round(78 - Math.abs(i - 3) * 1.2), rain = [10,15,20,40,55,30,20,10,5,5,10,15][i-1];
+    var d = document.createElement('div');
+    d.innerHTML = '<span>' + ((h % 12) || 12) + (h < 12 ? 'a' : 'p') + '</span><b>' + t + '°</b><i style="height:' + (rain/10) + 'cqh"></i>';
+    hrs.appendChild(d);
+  }
+
+  var cb = document.getElementById('lkBoard');
+  var P = {'0,4':'b','1,0':'b','1,1':'b','1,5':'b','1,6':'b','2,2':'b','3,3':'w','3,4':'b','4,4':'w','5,2':'w','5,5':'w','6,0':'w','6,1':'w','6,6':'w','6,7':'w','7,6':'w'};
+  for (var r = 0; r < 8; r++) for (var c = 0; c < 8; c++){
+    var sq = document.createElement('i'); sq.className = ((r + c) % 2 ? 'd' : 'l') + (P[r+','+c] ? ' p ' + P[r+','+c] : ''); cb.appendChild(sq);
+  }
+
+  var tEnd = Date.now() + (2*3600 + 14*60 + 37) * 1000;
+  setInterval(function(){
+    var s = Math.max(0, Math.floor((tEnd - Date.now()) / 1000));
+    document.getElementById('lkT').textContent = 'T− ' + [Math.floor(s/3600), Math.floor(s%3600/60), s%60].map(function(n){ return ('0'+n).slice(-2); }).join(':');
+  }, 1000);
+
+  var io = new IntersectionObserver(function(es){ es.forEach(function(en){ if (en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); } }); }, {threshold:.15});
+  document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+})();
+</script>
+</body>
+</html>

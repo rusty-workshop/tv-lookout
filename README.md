@@ -1,9 +1,9 @@
 # tv-lookout
 
 **Lookout** for Family Room TV (Sony BRAVIA X90J, Google TV): the Android TV
-version of [roku-lookout](../roku-lookout), written after the Family room
+version of [roku-lookout](https://github.com/rusty-workshop/roku-lookout), written after the Family room
 Roku's developer installer refused to start. Same three screens, fed by
-[latitude-lookout](../latitude-lookout)'s `http://192.168.1.158:8473/api/feed`:
+[lookout-feed](https://github.com/rusty-workshop/latitude-services/tree/main/lookout-feed)'s `http://192.168.1.158:8473/api/feed`:
 
 1. **Clock + weather**: clock, date, Jacksonville conditions, air quality/UV,
    the next visible space station pass, and the next 12 hours.
